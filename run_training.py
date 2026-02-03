@@ -87,14 +87,14 @@ def import_labels_to_project(csv_path: str, config_path: str):
     cfg = auxiliaryfunctions.read_config(config_path)
     project_path = Path(config_path).parent
     
-    # Read the CSV
+    # Read the CSV - handle different header formats
     df = pd.read_csv(csv_path, header=[0, 1, 2], index_col=0)
     
     # Get unique video folders from the index
     video_folders = set()
     for idx in df.index:
         # Extract folder name from path like "labeled-data/video_name/frame.jpg"
-        parts = idx.split("/")
+        parts = str(idx).split("/")
         if len(parts) >= 2:
             video_folders.add(parts[1])
     
@@ -103,8 +103,10 @@ def import_labels_to_project(csv_path: str, config_path: str):
     # Update config.yaml with bodyparts from CSV
     bodyparts = df.columns.get_level_values(1).unique().tolist()
     cfg["bodyparts"] = bodyparts
-    auxiliaryfunctions.write_config(config_path, cfg)
-    print(f"  Updated config with {len(bodyparts)} bodyparts")
+    
+    # Clear existing video_sets and add our labeled data folders as "videos"
+    # This is a workaround for when actual video names don't match label folders
+    cfg["video_sets"] = {}
     
     # Create labeled-data directories and save H5 files
     for video_folder in video_folders:
@@ -114,10 +116,20 @@ def import_labels_to_project(csv_path: str, config_path: str):
         # Filter rows for this video
         video_df = df[df.index.str.contains(video_folder)]
         
-        # Fix index to just be image filenames
-        video_df.index = [idx.split("/")[-1] for idx in video_df.index]
+        # Fix index to be proper format: just the image filename
+        new_index = []
+        for idx in video_df.index:
+            # Get just the filename
+            filename = str(idx).split("/")[-1]
+            new_index.append(filename)
+        video_df.index = new_index
         
-        # Save as H5
+        # Add this folder to video_sets in config (as a fake video path)
+        # This tells DLC where to find the annotations
+        fake_video_path = str(project_path / "labeled-data" / video_folder)
+        cfg["video_sets"][fake_video_path] = {"crop": "0, 640, 0, 480"}
+        
+        # Save as H5 with proper multi-index structure
         h5_path = labeled_data_dir / f"CollectedData_{cfg['scorer']}.h5"
         video_df.to_hdf(h5_path, key="df_with_missing", mode="w")
         
@@ -127,6 +139,9 @@ def import_labels_to_project(csv_path: str, config_path: str):
         
         print(f"  ✓ Saved {len(video_df)} frames to {labeled_data_dir.name}")
     
+    # Write updated config
+    auxiliaryfunctions.write_config(config_path, cfg)
+    print(f"  Updated config with {len(bodyparts)} bodyparts")
     print("✓ Labels imported successfully")
 
 
