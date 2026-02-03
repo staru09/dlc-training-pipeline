@@ -83,9 +83,8 @@ def train_network(config_path: str, use_superanimal: bool = False):
 
 
 def train_with_superanimal(config_path: str):
-    """Train using SuperAnimal transfer learning."""
+    """Train using SuperAnimal transfer learning (DLC 3.0 API)."""
     import deeplabcut
-    from deeplabcut.pose_estimation_pytorch import WeightInitialization
     
     superanimal_name = CONFIG["superanimal_name"]
     
@@ -113,21 +112,17 @@ def train_with_superanimal(config_path: str):
     }
     
     print("→ Creating keypoint mapping...")
-    deeplabcut.modelzoo.create_conversion_table(
-        config_path,
-        super_animal=superanimal_name,
-        project_to_super_animal=project_to_super,
-    )
-    print("✓ Keypoint mapping created")
+    try:
+        deeplabcut.modelzoo.create_conversion_table(
+            config_path,
+            super_animal=superanimal_name,
+            project_to_super_animal=project_to_super,
+        )
+        print("✓ Keypoint mapping created")
+    except Exception as e:
+        print(f"⚠ Keypoint mapping: {e}")
     
-    # Setup weight initialization
-    print("→ Setting up weight initialization...")
-    weight_init = WeightInitialization(
-        dataset=superanimal_name,
-        with_decoder=False,
-    )
-    
-    # Create training dataset for SuperAnimal
+    # Create training dataset
     print("→ Creating training dataset...")
     deeplabcut.create_training_dataset(
         config_path,
@@ -135,20 +130,48 @@ def train_with_superanimal(config_path: str):
         augmenter_type="albumentations",
     )
     
+    # Try to import WeightInitialization from different paths (varies by DLC version)
+    weight_init = None
+    try:
+        from deeplabcut.pose_estimation_pytorch.config import WeightInitialization
+        weight_init = WeightInitialization(dataset=superanimal_name, with_decoder=False)
+        print("✓ Using WeightInitialization from config module")
+    except ImportError:
+        try:
+            from deeplabcut.pose_estimation_pytorch.runners.train import WeightInitialization
+            weight_init = WeightInitialization(dataset=superanimal_name, with_decoder=False)
+            print("✓ Using WeightInitialization from runners module")
+        except ImportError:
+            try:
+                from deeplabcut.pose_estimation_pytorch import WeightInitialization
+                weight_init = WeightInitialization(dataset=superanimal_name, with_decoder=False)
+                print("✓ Using WeightInitialization from pose_estimation_pytorch")
+            except ImportError:
+                print("⚠ WeightInitialization not available, training without pretrained weights")
+    
     # Train with transfer learning
-    print("→ Starting training with transfer learning...")
+    print("→ Starting training...")
     print(f"  SuperAnimal: {superanimal_name}")
     print(f"  Epochs: {CONFIG['epochs']}")
     print(f"  Batch size: {CONFIG['batch_size']}")
     
-    deeplabcut.train_network(
-        config_path,
-        shuffle=CONFIG["shuffle"],
-        maxiters=CONFIG["epochs"] * 1000,
-        displayiters=500,
-        saveiters=5000,
-        weight_init=weight_init,
-    )
+    if weight_init:
+        deeplabcut.train_network(
+            config_path,
+            shuffle=CONFIG["shuffle"],
+            maxiters=CONFIG["epochs"] * 1000,
+            displayiters=500,
+            saveiters=5000,
+            weight_init=weight_init,
+        )
+    else:
+        deeplabcut.train_network(
+            config_path,
+            shuffle=CONFIG["shuffle"],
+            maxiters=CONFIG["epochs"] * 1000,
+            displayiters=500,
+            saveiters=5000,
+        )
 
 
 def evaluate_network(config_path: str):
