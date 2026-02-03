@@ -61,6 +61,13 @@ def setup_project(csv_path: str, video_paths: list, working_dir: str = "."):
         copy_videos=False
     )
     
+    # Validate project was created
+    if config_path == "nothingcreated" or not Path(config_path).exists():
+        print("\n❌ ERROR: Project creation failed!")
+        print("This usually means no valid video files were found.")
+        print("Please check that your video paths are correct and the files exist.")
+        raise SystemExit(1)
+    
     print(f"✓ Created project: {config_path}")
     
     # Import CSV labels to project
@@ -382,22 +389,28 @@ Examples:
     CONFIG["batch_size"] = args.batch_size
     CONFIG["net_type"] = args.net_type
     
-    # Expand video paths
+    # Expand video paths - convert to absolute paths
     video_paths = []
     for v in args.videos:
-        if os.path.isdir(v):
+        v_path = Path(v).resolve()  # Convert to absolute path
+        if v_path.is_dir():
             # Get all video files from directory
-            for ext in [".mp4", ".avi", ".mov", ".mkv"]:
-                video_paths.extend(Path(v).glob(f"*{ext}"))
-            video_paths = [str(p) for p in video_paths]
+            for ext in [".mp4", ".avi", ".mov", ".mkv", ".MP4", ".AVI", ".MOV", ".MKV"]:
+                for video_file in v_path.glob(f"*{ext}"):
+                    video_paths.append(str(video_file.resolve()))
+        elif v_path.is_file():
+            video_paths.append(str(v_path))
         else:
-            video_paths.append(v)
+            print(f"WARNING: Path not found: {v}")
     
     if not video_paths:
         print("ERROR: No video files found!")
+        print("Make sure to provide paths to actual video files (.mp4, .avi, .mov, .mkv)")
         return
     
-    print(f"Found {len(video_paths)} video(s)")
+    print(f"Found {len(video_paths)} video(s):")
+    for vp in video_paths:
+        print(f"  - {vp}")
     
     # Run pipeline
     run_full_pipeline(args.csv, video_paths, args.superanimal)
