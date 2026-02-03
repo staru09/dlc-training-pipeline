@@ -1,0 +1,17 @@
+# rf_to_dlc - Core Dependencies
+numpy>=1.21.0
+pandas>=1.3.0
+opencv-python>=4.5.0
+matplotlib>=3.4.0
+requests>=2.25.0
+Pillow>=8.0.0
+tqdm>=4.60.0
+
+# Optional: For HDF5 support (required for DLC compatibility)
+tables>=3.6.0
+
+# Optional: For Google Cloud Storage support
+# google-cloud-storage>=1.35.0
+
+# Optional: For DeepLabCut integration
+# deeplabcut>=2.3.0

@@ -1,0 +1,7 @@
+dataset/
+venv/
+.venv/
+.env
+__pycache__/
+rf_to_dlc.py
+train_model.py  
