@@ -22,7 +22,7 @@ def setup_dataset(project_path: str, dataset_path: str):
         print(f"ERROR: {labeled_data_dir} not found")
         return False
     
-    # Get the video folder name (e.g., milo_15s)
+    # Get the video folder name (e.g., milo_15s) - prioritize folder with H5 files
     video_folders = list(labeled_data_dir.iterdir())
     video_folders = [f for f in video_folders if f.is_dir() and not f.name.startswith('.')]
     
@@ -30,7 +30,25 @@ def setup_dataset(project_path: str, dataset_path: str):
         print("ERROR: No video folders found in labeled-data")
         return False
     
-    video_folder = video_folders[0]
+    # Find the folder that has H5 files (the one with annotations)
+    video_folder = None
+    for folder in video_folders:
+        h5_files = list(folder.glob("CollectedData_*.h5"))
+        if h5_files:
+            video_folder = folder
+            break
+    
+    # Fallback: look for milo_15s specifically
+    if video_folder is None:
+        for folder in video_folders:
+            if "milo" in folder.name.lower():
+                video_folder = folder
+                break
+    
+    # Last resort: first folder
+    if video_folder is None:
+        video_folder = video_folders[0]
+    
     print(f"Target folder: {video_folder}")
     
     # Collect all images from train/valid/test

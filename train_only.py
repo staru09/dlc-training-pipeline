@@ -19,8 +19,8 @@ from pathlib import Path
 # ============================================================================
 
 CONFIG = {
-    # Network settings
-    "net_type": "dlcrnet_ms5",  # Options: dlcrnet_ms5, resnet_50, hrnet_w32
+    # Network settings - resnet_50 is most reliable across DLC versions
+    "net_type": "resnet_50",  # Options: resnet_50, resnet_101, mobilenet_v2_1.0
     "augmenter_type": "albumentations",
     
     # Training settings
