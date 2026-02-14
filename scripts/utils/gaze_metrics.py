@@ -26,6 +26,8 @@ def calculate_gaze_vector(keypoints):
     name_map = {
         'left eye': 'lefteye',
         'right eye': 'righteye',
+        'left_eye': 'lefteye',
+        'right_eye': 'righteye',
         'nose': 'nose'
     }
     

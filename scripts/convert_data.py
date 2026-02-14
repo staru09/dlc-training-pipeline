@@ -26,11 +26,32 @@ def load_keypoints_from_coco(annotation_path: Path) -> tuple[list, list]:
     image_id_to_name = {img["id"]: img["file_name"] for img in data["images"]}
     
     # Find keypoint names from categories
-    keypoint_names = []
+    # Priority:
+    # 1. Category named 'dog' (case-insensitive)
+    # 2. Category with the most keypoints
+    target_category = None
+    max_kpts = 0
+    
     for cat in data.get("categories", []):
-        if "keypoints" in cat and cat["keypoints"]:
-            keypoint_names = cat["keypoints"]
+        kpts = cat.get("keypoints", [])
+        if not kpts:
+            continue
+            
+        # If we find 'dog', prefer it immediately (or store it)
+        if cat["name"].lower() == "dog":
+            target_category = cat
             break
+        
+        # Otherwise keep track of the one with most keypoints
+        if len(kpts) > max_kpts:
+            max_kpts = len(kpts)
+            target_category = cat
+            
+    if target_category:
+        keypoint_names = target_category["keypoints"]
+        print(f"Selected category: '{target_category['name']}' with {len(keypoint_names)} keypoints")
+    else:
+        keypoint_names = []
     
     records = []
     for ann in data["annotations"]:
@@ -80,7 +101,8 @@ def validate_coco_data(input_dir: Path) -> bool:
                 continue
                 
             # Check keypoints match SuperAnimal/Quadruped expectations (Warning only)
-            expected_kpts = {'nose', 'lefteye', 'righteye', 'leftear', 'rightear'} # subset example
+            # User dataset has: right_eye, left_eye, nose, etc.
+            expected_kpts = {'nose', 'left_eye', 'right_eye', 'left_ear_base', 'right_ear_base'} 
             found_kpts = set()
             for cat in data.get("categories", []):
                 if "keypoints" in cat:
