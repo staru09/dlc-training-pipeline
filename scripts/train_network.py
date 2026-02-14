@@ -132,23 +132,68 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
             # Look in the potentially linked/copied folders now
             project_dir = Path(config_path).parent
             csv_files = list((project_dir / "labeled-data").rglob("CollectedData*.csv"))
+            h5_files = list((project_dir / "labeled-data").rglob("CollectedData*.h5"))
+            
+            print(f"\n[{model_type}] === DEBUG: Data Files Found ===")
+            print(f"  CSV files: {csv_files}")
+            print(f"  H5 files: {h5_files}")
             
             if csv_files:
                 sample_csv = csv_files[0]
-                df = pd.read_csv(sample_csv, header=[0, 1, 2], index_col=0, nrows=0)
+                print(f"\n[{model_type}] === DEBUG: CSV Structure ({sample_csv.name}) ===")
+                
+                # Show raw first 4 lines of CSV
+                with open(sample_csv, 'r') as f:
+                    for i, line in enumerate(f):
+                        if i < 4:
+                            print(f"  Row {i}: {line.strip()[:200]}")
+                        else:
+                            break
+                
+                # Load as MultiIndex and inspect
+                df = pd.read_csv(sample_csv, header=[0, 1, 2], index_col=0)
+                print(f"\n[{model_type}] === DEBUG: DataFrame Info ===")
+                print(f"  Shape: {df.shape}")
+                print(f"  Column levels: {df.columns.nlevels}")
+                print(f"  Column names: {df.columns.names}")
+                print(f"  Level 0 unique values: {list(df.columns.get_level_values(0).unique())}")
+                print(f"  Level 1 unique values (bodyparts): {list(df.columns.get_level_values(1).unique())}")
+                print(f"  Level 2 unique values: {list(df.columns.get_level_values(2).unique())}")
+                print(f"  First 3 columns: {list(df.columns[:3])}")
+                print(f"  Index (first 3): {list(df.index[:3])}")
+                
                 bodyparts = list(df.columns.get_level_values(1).unique())
                 
                 with open(config_path, 'r') as f:
                     cfg = yaml.safe_load(f)
                 
+                print(f"\n[{model_type}] === DEBUG: Config ===")
+                print(f"  scorer in config: '{cfg.get('scorer', 'NOT SET')}'")
+                print(f"  bodyparts in config: {cfg.get('bodyparts', 'NOT SET')}")
+                
                 cfg['bodyparts'] = bodyparts
                 with open(config_path, 'w') as f:
                     yaml.dump(cfg, f, default_flow_style=False)
-                # print(f"[{model_type}] ✓ Synced bodyparts")
+                print(f"[{model_type}] ✓ Synced {len(bodyparts)} bodyparts")
+            
+            # Also check H5 file structure
+            if h5_files:
+                try:
+                    h5_df = pd.read_hdf(h5_files[0])
+                    print(f"\n[{model_type}] === DEBUG: H5 File Structure ===")
+                    print(f"  Shape: {h5_df.shape}")
+                    print(f"  Column levels: {h5_df.columns.nlevels}")
+                    print(f"  Level 0 unique: {list(h5_df.columns.get_level_values(0).unique())}")
+                    print(f"  First 3 columns: {list(h5_df.columns[:3])}")
+                except Exception as he:
+                    print(f"[{model_type}] ⚠ Could not read H5: {he}")
+                    
         except Exception as e:
             print(f"[{model_type}] ⚠ Warning: Failed to sync bodyparts: {e}")
+            traceback.print_exc()
 
         # 3. Create Training Dataset
+        print(f"\n[{model_type}] === Calling create_training_dataset ===")
         try:
             deeplabcut.create_training_dataset(
                 config_path, 
@@ -156,9 +201,9 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
                 net_type=model_type, 
                 augmenter_type='imgaug'
             )
+            print(f"[{model_type}] ✓ create_training_dataset succeeded!")
         except Exception as e:
-             # pass # Often fails if already exists, harmless
-             print(f"[{model_type}] ⚠ create_training_dataset warning: {e}") 
+             print(f"[{model_type}] ⚠ create_training_dataset FAILED: {e}") 
              traceback.print_exc()
 
     return config_path
