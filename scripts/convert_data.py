@@ -75,19 +75,32 @@ def load_keypoints_from_coco(annotation_path: Path) -> tuple[list, list]:
 
 def validate_coco_data(input_dir: Path) -> bool:
     """Validate COCO dataset structure and schema."""
-    subfolders = ['train', 'valid', 'test']
+    
+    # Check if input_dir itself is a dataset folder (has annotations)
+    if (input_dir / "_annotations.coco.json").exists():
+        subfolders = [''] # Treat input_dir as the only subfolder
+    else:
+        subfolders = ['train', 'valid', 'test']
+    
     critical_error = False
     
     print("\n--- Validating Dataset ---")
     
     for sub in subfolders:
-        sub_dir = input_dir / sub
+        if sub == '':
+            sub_dir = input_dir
+            display_name = input_dir.name
+        else:
+            sub_dir = input_dir / sub
+            display_name = sub
+            
         if not sub_dir.exists():
-            continue
+            if sub != '': # Skip missing subfolders only if looking for them
+                continue
             
         ann_path = sub_dir / "_annotations.coco.json"
         if not ann_path.exists():
-            print(f"⚠ Warning: No annotations found in {sub}")
+            print(f"[WARNING] No annotations found in {display_name}")
             continue
             
         try:
@@ -109,12 +122,12 @@ def validate_coco_data(input_dir: Path) -> bool:
                     found_kpts.update([k.lower() for k in cat["keypoints"]])
             
             if not found_kpts:
-                print(f"❌ Error: No keypoints defined in categories for {sub}")
+                print(f"[ERROR] No keypoints defined in categories for {display_name}")
                 critical_error = True
             else:
                 missing = [k for k in expected_kpts if k not in found_kpts]
                 if missing:
-                    print(f"⚠ Warning: Missing standard keypoints in {sub}: {missing}")
+                    print(f"[WARNING] Missing standard keypoints in {display_name}: {missing}")
                     print(f"  Found: {list(found_kpts)}")
             
             # Check image existence
@@ -125,13 +138,13 @@ def validate_coco_data(input_dir: Path) -> bool:
                     missing_imgs += 1
             
             if missing_imgs > 0:
-                print(f"❌ Error: {missing_imgs} images referenced in annotations but missing in {sub}")
+                print(f"[ERROR] {missing_imgs} images referenced in annotations but missing in {display_name}")
                 critical_error = True
             else:
-                print(f"✓ {sub}: {len(images)} images verified")
+                print(f"[PASS] {display_name}: {len(images)} images verified")
                 
         except json.JSONDecodeError:
-            print(f"❌ Error: Invalid JSON in {sub}")
+            print(f"[ERROR] Invalid JSON in {display_name}")
             critical_error = True
             
     return not critical_error
@@ -147,7 +160,7 @@ def convert_to_dlc_format(
     
     input_dir = Path(input_dir)
     if not validate_coco_data(input_dir):
-        print("\n❌ Validation failed. Fixing these issues is recommended.")
+        print("\n[ERROR] Validation failed. Fixing these issues is recommended.")
         response = input("Continue anyway? (y/n): ")
         if response.lower() != 'y':
             return False
@@ -160,13 +173,22 @@ def convert_to_dlc_format(
     print(f"Scorer: {scorer}")
     
     # Find all annotation files
-    subfolders = ['train', 'valid', 'test']
+    # Check if input_dir itself is a dataset folder
+    if (input_dir / "_annotations.coco.json").exists():
+        subfolders = ['']
+    else:
+        subfolders = ['train', 'valid', 'test']
+        
     all_keypoints = []
     all_records = []
     all_images = {}
     
     for sub in subfolders:
-        sub_dir = input_dir / sub
+        if sub == '':
+            sub_dir = input_dir
+        else:
+            sub_dir = input_dir / sub
+            
         if not sub_dir.exists():
             continue
         
@@ -220,13 +242,18 @@ def convert_to_dlc_format(
     # Save CSV
     csv_path = output_dir / f"CollectedData_{scorer}.csv"
     df_combined.to_csv(csv_path, index=False, header=False)
-    print(f"\n✓ Saved CSV: {csv_path}")
+    print(f"\n[SAVED] CSV: {csv_path}")
     
     # Create H5 file with proper MultiIndex
-    df_h5 = pd.read_csv(csv_path, header=[0, 1, 2], index_col=0)
-    h5_path = output_dir / f"CollectedData_{scorer}.h5"
-    df_h5.to_hdf(h5_path, key="df_with_missing", mode="w")
-    print(f"✓ Saved H5: {h5_path}")
+    try:
+        df_h5 = pd.read_csv(csv_path, header=[0, 1, 2], index_col=0)
+        h5_path = output_dir / f"CollectedData_{scorer}.h5"
+        df_h5.to_hdf(h5_path, key="df_with_missing", mode="w")
+        print(f"[SAVED] H5: {h5_path}")
+    except ImportError:
+        print(f"[WARNING] Could not save H5 file. 'pytables' is not installed.")
+    except Exception as e:
+        print(f"[WARNING] Could not save H5 file: {e}")
     
     # Copy images
     print(f"\nCopying {len(all_images)} images...")
@@ -236,9 +263,9 @@ def convert_to_dlc_format(
         if not dest.exists():
             shutil.copy2(img_path, dest)
             copied += 1
-    print(f"✓ Copied {copied} images")
+    print(f"[COPIED] {copied} images")
     
-    print(f"\n✓ Conversion complete!")
+    print(f"\n[DONE] Conversion complete!")
     print(f"  Output: {output_dir}")
     return True
 
