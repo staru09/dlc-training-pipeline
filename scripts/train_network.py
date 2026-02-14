@@ -8,8 +8,11 @@ import pandas as pd
 
 import sys
 import subprocess
-
 import traceback
+
+# Import conversion function from convert_data.py
+sys.path.insert(0, str(Path(__file__).parent))
+from convert_data import convert_to_dlc_format
 
 def setup_model_variant(base_project_name, data_path, model_type, author="aru", videotype=".jpg"):
     """
@@ -95,16 +98,28 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
                         os.symlink(folder, dest_folder)
                 except OSError:
                     shutil.copytree(folder, dest_folder)
+                
+                # Auto-convert raw COCO datasets if needed
+                has_collected = list(dest_folder.glob("CollectedData_*.csv"))
+                has_coco = (dest_folder / "_annotations.coco.json").exists()
+                if not has_collected and has_coco:
+                    print(f"[{model_type}] Converting COCO data in {folder.name}...")
+                    convert_to_dlc_format(
+                        input_dir=dest_folder,
+                        output_dir=labeled_data_dir,
+                        scorer=author,
+                        video_name=folder.name
+                    )
+                elif has_collected:
+                    print(f"[{model_type}] ✓ {folder.name} already has CollectedData files")
                     
                 # Register in config
-                # Key must be the absolute path to the folder in labeled-data
-                # DLC expects crop parameters
                 cfg['video_sets'][str(dest_folder.resolve())] = {'crop': '0, 100, 0, 100'} 
                 
             with open(config_path, 'w') as f:
                 yaml.dump(cfg, f, default_flow_style=False)
                 
-            print(f"[{model_type}] ✓ Manually linked data folders: {[f.name for f in video_folders]}")
+            print(f"[{model_type}] ✓ Linked data folders: {[f.name for f in video_folders]}")
 
         except Exception as e:
             print(f"[{model_type}] ❌ Error creating project: {e}")
