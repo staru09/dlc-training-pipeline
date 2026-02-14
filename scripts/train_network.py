@@ -131,8 +131,23 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
         try:
             # Look in the potentially linked/copied folders now
             project_dir = Path(config_path).parent
-            csv_files = list((project_dir / "labeled-data").rglob("CollectedData*.csv"))
-            h5_files = list((project_dir / "labeled-data").rglob("CollectedData*.h5"))
+            labeled_data_path = project_dir / "labeled-data"
+            
+            # Symlink-safe search: rglob doesn't follow symlinks, so iterate explicitly
+            csv_files = []
+            h5_files = []
+            print(f"\n[{model_type}] === DEBUG: labeled-data/ contents ===")
+            for item in sorted(labeled_data_path.iterdir()):
+                is_link = item.is_symlink()
+                is_dir = item.is_dir()
+                print(f"  {item.name} (symlink={is_link}, dir={is_dir})")
+                if is_dir:
+                    sub_csvs = list(item.glob("CollectedData*.csv"))
+                    sub_h5s = list(item.glob("CollectedData*.h5"))
+                    csv_files.extend(sub_csvs)
+                    h5_files.extend(sub_h5s)
+                    if sub_csvs or sub_h5s:
+                        print(f"    -> CSV: {[f.name for f in sub_csvs]}, H5: {[f.name for f in sub_h5s]}")
             
             print(f"\n[{model_type}] === DEBUG: Data Files Found ===")
             print(f"  CSV files: {csv_files}")
