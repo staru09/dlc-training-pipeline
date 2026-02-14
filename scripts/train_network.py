@@ -9,6 +9,8 @@ import pandas as pd
 import sys
 import subprocess
 
+import traceback
+
 def setup_model_variant(base_project_name, data_path, model_type, author="aru", videotype=".jpg"):
     """
     Setup a specific model variant (Create Project -> Sync Config -> Create Dataset).
@@ -140,7 +142,9 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
                 augmenter_type='imgaug'
             )
         except Exception as e:
+             # pass # Often fails if already exists, harmless
              print(f"[{model_type}] ⚠ create_training_dataset warning: {e}") 
+             traceback.print_exc()
 
     return config_path
 
