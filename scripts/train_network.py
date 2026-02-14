@@ -37,13 +37,31 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
         # video_list = [str(f) for f in video_folders]
         # Passing folders to create_new_project causes it to scan for images and add them individually
         # We want to treat folders as "labeled-data" sources. 
-        # Strategy: Create empty project, then symlink/copy folders into labeled-data
+        # Strategy: Create project using ONE dummy file (to satisfy DLC requirements), 
+        # then manually symlink/copy folders into labeled-data.
         
+        # Find a dummy file (jpg/png) in the first folder
+        dummy_video = None
+        for vid_folder in video_folders:
+            for ext in ['*.jpg', '*.png', '*.mp4', '*.avi']:
+                try:
+                    found = next(vid_folder.glob(ext))
+                    dummy_video = str(found.resolve())
+                    break
+                except StopIteration:
+                    continue
+            if dummy_video:
+                break
+                
+        if not dummy_video:
+            print(f"[{model_type}] ❌ Error: No valid images/videos found in data folders to initialize project.")
+            return None
+
         try:
             config_path = deeplabcut.create_new_project(
                 project_name, 
                 author, 
-                [], # Empty video list to prevent auto-scan
+                [dummy_video], # Pass single dummy file
                 working_directory=str(base_dir), 
                 copy_videos=False, 
                 multianimal=False
