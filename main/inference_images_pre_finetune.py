@@ -141,7 +141,7 @@ def main():
             [str(temp_video_path)],
             args.model_name,
             scale_list=args.scale_list,
-            video_type=".mp4",
+            videotype=".mp4",
         )
         
         # Output handling

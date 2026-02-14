@@ -53,7 +53,7 @@ def main():
             video_paths,
             SUPERANIMAL_NAME,
             scale_list=SCALE_LIST,
-            video_type=".mp4", # Assumes mp4, but DLC might detect others
+            videotype=".mp4", # Assumes mp4, but DLC might detect others
         )
         print("\n✓ Inference complete!")
         
