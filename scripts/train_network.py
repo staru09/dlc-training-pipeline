@@ -44,8 +44,7 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
                 video_list, 
                 working_directory=str(base_dir), 
                 copy_videos=False, 
-                multianimal=False,
-                superanimal_transfer_learning=False
+                multianimal=False
             )
         except Exception as e:
             print(f"[{model_type}] ❌ Error creating project: {e}")
@@ -84,18 +83,18 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
 
     return config_path
 
-def train_variant(config_path, model_type):
+def train_variant(config_path, model_type, maxiters=50):
     """
     Run the actual training loop.
     """
-    print(f"\n[{model_type}] Starting training...")
+    print(f"\n[{model_type}] Starting training for {maxiters} iterations...")
     try:
         deeplabcut.train_network(
             config_path, 
             shuffle=1, 
-            displayiters=100, 
-            saveiters=1000, 
-            maxiters=50000,
+            displayiters=10, 
+            saveiters=maxiters if maxiters < 500 else 500, 
+            maxiters=maxiters,
             allow_growth=True
         )
     except KeyboardInterrupt:
@@ -103,7 +102,7 @@ def train_variant(config_path, model_type):
     except Exception as e:
         print(f"[{model_type}] ❌ Error during training: {e}")
 
-def main_setup(project_name, data_path, specific_model=None, parallel=False):
+def main_setup(project_name, data_path, specific_model=None, parallel=False, maxiters=50):
     models_to_train = [
         "resnet_50", 
         "resnet_101", 
@@ -136,7 +135,8 @@ def main_setup(project_name, data_path, specific_model=None, parallel=False):
                 sys.executable, 
                 __file__, 
                 "--train_only_config", str(config_path),
-                "--model_type", model
+                "--model_type", model,
+                "--maxiters", str(maxiters)
             ]
             p = subprocess.Popen(cmd)
             processes.append(p)
@@ -149,7 +149,7 @@ def main_setup(project_name, data_path, specific_model=None, parallel=False):
     else:
         # Sequential
         for model, config_path in configs.items():
-            train_variant(config_path, model)
+            train_variant(config_path, model, maxiters=maxiters)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train DLC models")
@@ -158,6 +158,7 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", help="Path to labeled-data folder")
     parser.add_argument("--model", help="Run only a specific model")
     parser.add_argument("--parallel", action="store_true", help="Run training in parallel")
+    parser.add_argument("--maxiters", type=int, default=50, help="Number of training iterations (default: 50)")
     
     # Internal worker args
     parser.add_argument("--train_only_config", help="Internal: Path to config for worker process")
@@ -167,14 +168,15 @@ if __name__ == "__main__":
     
     if args.train_only_config:
         # Worker mode
-        train_variant(args.train_only_config, args.model_type)
+        train_variant(args.train_only_config, args.model_type, maxiters=args.maxiters)
     elif args.project_name and args.data_path:
         # Main mode
         main_setup(
             project_name=args.project_name,
             data_path=args.data_path,
             specific_model=args.model,
-            parallel=args.parallel
+            parallel=args.parallel,
+            maxiters=args.maxiters
         )
     else:
         parser.print_help()
