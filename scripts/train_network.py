@@ -34,18 +34,58 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
             print(f"[{model_type}] ❌ Error: No folders found in data_path.")
             return None
 
-        video_list = [str(f) for f in video_folders]
+        # video_list = [str(f) for f in video_folders]
+        # Passing folders to create_new_project causes it to scan for images and add them individually
+        # We want to treat folders as "labeled-data" sources. 
+        # Strategy: Create empty project, then symlink/copy folders into labeled-data
         
         try:
-            # superanimal_transfer_learning=False for custom architectures
             config_path = deeplabcut.create_new_project(
                 project_name, 
                 author, 
-                video_list, 
+                [], # Empty video list to prevent auto-scan
                 working_directory=str(base_dir), 
                 copy_videos=False, 
                 multianimal=False
             )
+            
+            # Manual Data Setup
+            project_dir = Path(config_path).parent
+            labeled_data_dir = project_dir / "labeled-data"
+            labeled_data_dir.mkdir(exist_ok=True)
+            
+            with open(config_path, 'r') as f:
+                cfg = yaml.safe_load(f)
+                
+            cfg['video_sets'] = {}
+            
+            for folder in video_folders:
+                dest_folder = labeled_data_dir / folder.name
+                
+                # Copy or Symlink
+                if dest_folder.exists():
+                    shutil.rmtree(dest_folder) # Clean cleanup if needed
+                
+                # Try symlink first, fall back to copy
+                try:
+                    # Windows requires admin for symlinks usually, copy is safer for general use
+                    if os.name == 'nt':
+                        shutil.copytree(folder, dest_folder)
+                    else:
+                        os.symlink(folder, dest_folder)
+                except OSError:
+                    shutil.copytree(folder, dest_folder)
+                    
+                # Register in config
+                # Key must be the absolute path to the folder in labeled-data
+                # DLC expects crop parameters
+                cfg['video_sets'][str(dest_folder.resolve())] = {'crop': '0, 100, 0, 100'} 
+                
+            with open(config_path, 'w') as f:
+                yaml.dump(cfg, f, default_flow_style=False)
+                
+            print(f"[{model_type}] ✓ Manually linked data folders: {[f.name for f in video_folders]}")
+
         except Exception as e:
             print(f"[{model_type}] ❌ Error creating project: {e}")
             return None
@@ -54,7 +94,10 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
     if config_path:
         # Sync Bodyparts
         try:
-            csv_files = list(data_path.rglob("CollectedData*.csv"))
+            # Look in the potentially linked/copied folders now
+            project_dir = Path(config_path).parent
+            csv_files = list((project_dir / "labeled-data").rglob("CollectedData*.csv"))
+            
             if csv_files:
                 sample_csv = csv_files[0]
                 df = pd.read_csv(sample_csv, header=[0, 1, 2], index_col=0, nrows=0)
@@ -79,7 +122,7 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
                 augmenter_type='imgaug'
             )
         except Exception as e:
-             pass # Often fails if already exists, harmless
+             print(f"[{model_type}] ⚠ create_training_dataset warning: {e}") 
 
     return config_path
 
