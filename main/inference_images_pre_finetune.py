@@ -3,7 +3,7 @@ import os
 import argparse
 from pathlib import Path
 import deeplabcut
-from deeplabcut.modelzoo import video_inference_superanimal
+from deeplabcut import video_inference_superanimal
 import pandas as pd
 import glob
 
