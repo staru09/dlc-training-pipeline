@@ -9,6 +9,7 @@ import pandas as pd
 import sys
 import subprocess
 import traceback
+import glob
 
 # Import conversion function from convert_data.py
 sys.path.insert(0, str(Path(__file__).parent))
@@ -223,9 +224,9 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
 
     return config_path
 
-def train_variant(config_path, model_type, epochs=50):
+def train_variant(config_path, model_type, epochs=50, dataset_name="dataset"):
     """
-    Run the actual training loop.
+    Run the actually training loop, then evaluate and export results.
     """
     print(f"\n[{model_type}] Starting training for {epochs} epochs...")
     try:
@@ -241,18 +242,62 @@ def train_variant(config_path, model_type, epochs=50):
                     yaml.dump(pcfg, f, default_flow_style=False)
                 print(f"[{model_type}] ✓ Set epochs={epochs} in {pc.name}")
         
+        # 1. Train
         deeplabcut.train_network(
             config_path, 
             shuffle=1, 
             displayiters=10, 
             allow_growth=True
         )
-    except KeyboardInterrupt:
-        print(f"[{model_type}] Training stopped by user.")
-    except Exception as e:
-        print(f"[{model_type}] ❌ Error during training: {e}")
+        
+        # 2. Evaluate
+        print(f"\n[{model_type}] Evaluating network...")
+        deeplabcut.evaluate_network(config_path, plotting=True)
+        
+        # 3. Export Results
+        # Results are saved in project/evaluation-results/iteration-X/CombinedEvaluation-results.csv
+        # We need to find the most recent one
+        eval_dir = project_dir / "evaluation-results"
+        # Find all CSVs recursively
+        eval_csvs = list(eval_dir.rglob("*.csv"))
+        
+        if eval_csvs:
+            # Sort by modification time to get the latest
+            latest_csv = sorted(eval_csvs, key=os.path.getmtime)[-1]
+            
+            # Construct new name: {model_name}_{dataset_name}_{epochs}.csv
+            # Sanitize dataset_name just in case
+            safe_ds_name = Path(dataset_name).name
+            new_filename = f"{model_type}_{safe_ds_name}_{epochs}.csv"
+            
+            # Save to a common results folder or just the project root? 
+            # User asked to "save the output", usually implies a visible place. 
+            # Let's save it to the current working directory for easy access, 
+            # or creating a 'results' folder. Let's create 'final_results' folder.
+            results_dir = Path("final_results")
+            results_dir.mkdir(exist_ok=True)
+            
+            dest_path = results_dir / new_filename
+            shutil.copy2(latest_csv, dest_path)
+            print(f"[{model_type}] ✓ Saved evaluation results to: {dest_path}")
+            
+        else:
+            print(f"[{model_type}] ⚠ Warning: No evaluation CSV found to export.")
 
-def main_setup(project_name, data_path, specific_model=None, parallel=False, epochs=50):
+    except KeyboardInterrupt:
+        print(f"[{model_type}] Training/Evaluation stopped by user.")
+    except Exception as e:
+        print(f"[{model_type}] ❌ Error during training/evaluation: {e}")
+        traceback.print_exc()
+
+def main_setup(project_name, data_path, specific_model=None, parallel=False, epochs=50, dataset_name_arg=None):
+    # Determine dataset name
+    if dataset_name_arg:
+        dataset_name = dataset_name_arg
+    else:
+        # derive from data_path folder name
+        dataset_name = Path(data_path).name
+
     models_to_train = [
         "resnet_50", 
         "resnet_101", 
@@ -284,7 +329,8 @@ def main_setup(project_name, data_path, specific_model=None, parallel=False, epo
                 __file__, 
                 "--train_only_config", str(config_path),
                 "--model_type", model,
-                "--epochs", str(epochs)
+                "--epochs", str(epochs),
+                "--dataset_name", dataset_name
             ]
             p = subprocess.Popen(cmd)
             processes.append(p)
@@ -297,7 +343,7 @@ def main_setup(project_name, data_path, specific_model=None, parallel=False, epo
     else:
         # Sequential
         for model, config_path in configs.items():
-            train_variant(config_path, model, epochs=epochs)
+            train_variant(config_path, model, epochs=epochs, dataset_name=dataset_name)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train DLC models")
@@ -307,6 +353,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", help="Run only a specific model")
     parser.add_argument("--parallel", action="store_true", help="Run training in parallel")
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs (default: 50)")
+    parser.add_argument("--dataset_name", help="Name of the dataset (for output naming)")
     
     # Internal worker args
     parser.add_argument("--train_only_config", help="Internal: Path to config for worker process")
@@ -316,7 +363,9 @@ if __name__ == "__main__":
     
     if args.train_only_config:
         # Worker mode
-        train_variant(args.train_only_config, args.model_type, epochs=args.epochs)
+        # If dataset_name not passed to worker, default to "dataset"
+        ds_name = args.dataset_name if args.dataset_name else "dataset"
+        train_variant(args.train_only_config, args.model_type, epochs=args.epochs, dataset_name=ds_name)
     elif args.project_name and args.data_path:
         # Main mode
         main_setup(
@@ -324,7 +373,8 @@ if __name__ == "__main__":
             data_path=args.data_path,
             specific_model=args.model,
             parallel=args.parallel,
-            epochs=args.epochs
+            epochs=args.epochs,
+            dataset_name_arg=args.dataset_name
         )
     else:
         parser.print_help()
