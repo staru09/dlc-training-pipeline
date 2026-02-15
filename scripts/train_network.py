@@ -224,13 +224,13 @@ def setup_model_variant(base_project_name, data_path, model_type, author="aru", 
 
     return config_path
 
-def train_variant(config_path, model_type, epochs=50, dataset_name="dataset"):
+def train_variant(config_path, model_type, epochs=50, dataset_name="dataset", batch_size=8):
     """
     Run the actually training loop, then evaluate and export results.
     """
-    print(f"\n[{model_type}] Starting training for {epochs} epochs...")
+    print(f"\n[{model_type}] Starting training for {epochs} epochs (batch_size={batch_size})...")
     try:
-        # Update epochs in pytorch config (DLC 3.0 uses epochs, not maxiters)
+        # Update epochs and batch_size in pytorch config
         project_dir = Path(config_path).parent
         pytorch_configs = list(project_dir.rglob("pytorch_config.yaml"))
         for pc in pytorch_configs:
@@ -238,9 +238,10 @@ def train_variant(config_path, model_type, epochs=50, dataset_name="dataset"):
                 pcfg = yaml.safe_load(f)
             if 'train_settings' in pcfg:
                 pcfg['train_settings']['epochs'] = epochs
+                pcfg['train_settings']['batch_size'] = batch_size
                 with open(pc, 'w') as f:
                     yaml.dump(pcfg, f, default_flow_style=False)
-                print(f"[{model_type}] ✓ Set epochs={epochs} in {pc.name}")
+                print(f"[{model_type}] ✓ Updated {pc.name}: epochs={epochs}, batch_size={batch_size}")
         
         # 1. Train
         deeplabcut.train_network(
@@ -290,7 +291,7 @@ def train_variant(config_path, model_type, epochs=50, dataset_name="dataset"):
         print(f"[{model_type}] ❌ Error during training/evaluation: {e}")
         traceback.print_exc()
 
-def main_setup(project_name, data_path, specific_model=None, parallel=False, epochs=50, dataset_name_arg=None):
+def main_setup(project_name, data_path, specific_model=None, parallel=False, epochs=50, dataset_name_arg=None, batch_size=8):
     # Determine dataset name
     if dataset_name_arg:
         dataset_name = dataset_name_arg
@@ -330,7 +331,8 @@ def main_setup(project_name, data_path, specific_model=None, parallel=False, epo
                 "--train_only_config", str(config_path),
                 "--model_type", model,
                 "--epochs", str(epochs),
-                "--dataset_name", dataset_name
+                "--dataset_name", dataset_name,
+                "--batch_size", str(batch_size)
             ]
             p = subprocess.Popen(cmd)
             processes.append(p)
@@ -343,7 +345,7 @@ def main_setup(project_name, data_path, specific_model=None, parallel=False, epo
     else:
         # Sequential
         for model, config_path in configs.items():
-            train_variant(config_path, model, epochs=epochs, dataset_name=dataset_name)
+            train_variant(config_path, model, epochs=epochs, dataset_name=dataset_name, batch_size=batch_size)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train DLC models")
@@ -354,6 +356,7 @@ if __name__ == "__main__":
     parser.add_argument("--parallel", action="store_true", help="Run training in parallel")
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs (default: 50)")
     parser.add_argument("--dataset_name", help="Name of the dataset (for output naming)")
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size (default: 8)")
     
     # Internal worker args
     parser.add_argument("--train_only_config", help="Internal: Path to config for worker process")
@@ -365,7 +368,7 @@ if __name__ == "__main__":
         # Worker mode
         # If dataset_name not passed to worker, default to "dataset"
         ds_name = args.dataset_name if args.dataset_name else "dataset"
-        train_variant(args.train_only_config, args.model_type, epochs=args.epochs, dataset_name=ds_name)
+        train_variant(args.train_only_config, args.model_type, epochs=args.epochs, dataset_name=ds_name, batch_size=args.batch_size)
     elif args.project_name and args.data_path:
         # Main mode
         main_setup(
@@ -374,7 +377,8 @@ if __name__ == "__main__":
             specific_model=args.model,
             parallel=args.parallel,
             epochs=args.epochs,
-            dataset_name_arg=args.dataset_name
+            dataset_name_arg=args.dataset_name,
+            batch_size=args.batch_size
         )
     else:
         parser.print_help()
