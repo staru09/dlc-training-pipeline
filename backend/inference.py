@@ -95,19 +95,31 @@ def run_inference(
         params.device,
     )
 
-    video_inference_superanimal(
-        videos=[str(video_path)],
-        superanimal_name=params.superanimal_name,
-        model_name=params.model_name,
-        detector_name=params.detector_name,
-        max_individuals=params.max_individuals,
-        pcutoff=params.pcutoff,
-        batch_size=params.batch_size,
-        detector_batch_size=params.detector_batch_size,
-        video_adapt=False,
-        device=params.device,
-        dest_folder=dest_folder,
-    )
+    try:
+        video_inference_superanimal(
+            videos=[str(video_path)],
+            superanimal_name=params.superanimal_name,
+            model_name=params.model_name,
+            detector_name=params.detector_name,
+            max_individuals=params.max_individuals,
+            pcutoff=params.pcutoff,
+            batch_size=params.batch_size,
+            detector_batch_size=params.detector_batch_size,
+            video_adapt=False,
+            device=params.device,
+            dest_folder=dest_folder,
+        )
+    except TypeError as exc:
+        # DLC's create_video uses DataFrame.groupby(axis=1) which was removed
+        # in pandas 2.x. Pose data (H5/pickle) is already saved by this point,
+        # so we log the warning and continue to collect the results.
+        if "axis" in str(exc):
+            logger.warning(
+                "Labeled video creation failed (pandas compat issue): %s. "
+                "Pose data (H5/pickle) was saved successfully.", exc,
+            )
+        else:
+            raise
 
     # Discover outputs — DLC may write next to the video OR into dest_folder
     result_files: list[Path] = []
