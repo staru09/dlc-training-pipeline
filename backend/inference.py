@@ -126,6 +126,31 @@ def run_inference(
     for search_dir in {video_path.parent, settings.OUTPUT_DIR.resolve()}:
         result_files.extend(_discover_result_files(video_path, search_dir))
 
+    # Remove corrupt labeled MP4s (DLC's create_video fails on pandas 2.x,
+    # leaving tiny empty files).  Files < 1 KB are almost certainly broken.
+    result_files = [
+        f for f in result_files
+        if not (f.suffix == ".mp4" and f.stat().st_size < 1024)
+    ]
+
+    # ── Create annotated video with our own annotator ────────────────────
+    json_files = [f for f in result_files if f.suffix == ".json"]
+    if json_files:
+        from annotator import create_annotated_video
+
+        json_path = json_files[0]
+        annotated_path = settings.OUTPUT_DIR.resolve() / f"{video_path.stem}_annotated.mp4"
+        try:
+            create_annotated_video(
+                video_path=video_path,
+                predictions_json_path=json_path,
+                output_path=annotated_path,
+                pcutoff=params.pcutoff,
+            )
+            result_files.append(annotated_path)
+        except Exception as exc:
+            logger.warning("Custom annotated video creation failed: %s", exc)
+
     # Consolidate everything into OUTPUT_DIR
     filenames = _copy_results_to_output(result_files, settings.OUTPUT_DIR.resolve())
 
@@ -134,3 +159,4 @@ def run_inference(
         "result_files": filenames,
         "output_dir": settings.OUTPUT_DIR.resolve(),
     }
+
