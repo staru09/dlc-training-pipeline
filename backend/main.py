@@ -23,10 +23,12 @@ from config import (
     settings,
 )
 from inference import run_inference
+from job_manager import create_job, get_job, run_job_in_background
 from schemas import (
     HealthResponse,
     InferenceParams,
     InferenceResponse,
+    JobStatusResponse,
     ModelsResponse,
 )
 
@@ -44,7 +46,7 @@ app = FastAPI(
         "Upload a video, pick a SuperAnimal model + detector, "
         "and get back an annotated video with pose data."
     ),
-    version="0.1.0",
+    version="0.2.0",
 )
 
 
@@ -92,10 +94,10 @@ async def infer(
     device: str = Form(default=settings.DEFAULT_DEVICE),
 ):
     """
-    Upload a video and run SuperAnimal inference.
+    Upload a video and start SuperAnimal inference in the background.
 
-    Returns paths to the annotated video and pose-data files,
-    which can be downloaded via ``GET /results/{filename}``.
+    Returns a ``job_id`` immediately. Poll ``GET /jobs/{job_id}`` to
+    monitor progress and retrieve results when complete.
     """
     # ── Validate choices ─────────────────────────────────────────────────
     if model_name not in POSE_MODELS:
@@ -129,7 +131,7 @@ async def infer(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to save upload: {exc}")
 
-    # ── Run inference ────────────────────────────────────────────────────
+    # ── Build params ─────────────────────────────────────────────────────
     params = InferenceParams(
         superanimal_name=superanimal_name,
         model_name=model_name,
@@ -141,20 +143,52 @@ async def infer(
         device=device,
     )
 
-    try:
-        result = run_inference(video_path=upload_path, params=params)
-    except Exception as exc:
-        logger.exception("Inference failed")
-        raise HTTPException(status_code=500, detail=f"Inference error: {exc}")
+    # ── Create job & launch in background ────────────────────────────────
+    job = create_job(
+        video_name=video.filename,
+        model_name=model_name,
+        superanimal_name=superanimal_name,
+    )
+    job.add_log(f"Video uploaded: {video.filename} ({len(contents) / 1e6:.1f} MB)")
+
+    run_job_in_background(
+        job=job,
+        run_fn=run_inference,
+        video_path=upload_path,
+        params=params,
+    )
 
     return InferenceResponse(
-        message="Inference complete",
+        message="Inference job started — poll /jobs/{job_id} for status",
+        job_id=job.id,
         video_name=video.filename,
         model_used=model_name,
         detector_used=detector_name,
         superanimal=superanimal_name,
-        result_files=result["result_files"],
+        result_files=[],
     )
+
+
+# ── Job status polling endpoint ──────────────────────────────────────────────
+
+
+@app.get("/jobs/{job_id}", response_model=JobStatusResponse)
+def job_status(job_id: str):
+    """
+    Poll this endpoint to monitor a running inference job.
+
+    Returns the current status, elapsed time, captured log lines,
+    and (when complete) the list of downloadable result files.
+    """
+    job = get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+
+    data = job.to_dict()
+    return JobStatusResponse(**data)
+
+
+# ── Download results ─────────────────────────────────────────────────────────
 
 
 @app.get("/results/{filename}")

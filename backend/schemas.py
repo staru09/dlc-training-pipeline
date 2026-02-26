@@ -61,9 +61,10 @@ class InferenceParams(BaseModel):
 
 
 class InferenceResponse(BaseModel):
-    """Returned after a successful inference run."""
+    """Returned after an inference job is submitted."""
 
     message: str
+    job_id: str = Field(description="Job ID — poll /jobs/{job_id} for status")
     video_name: str
     model_used: str
     detector_used: str
@@ -86,3 +87,18 @@ class ModelsResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     service: str = "dlc-inference-api"
+
+
+class JobStatusResponse(BaseModel):
+    """Returned by the job polling endpoint."""
+
+    job_id: str
+    status: str = Field(description="queued | running | completed | failed")
+    video_name: str = ""
+    model_name: str = ""
+    superanimal_name: str = ""
+    elapsed_seconds: float | None = None
+    logs: list[dict] = Field(default_factory=list)
+    result_files: list[str] = Field(default_factory=list)
+    error: str | None = None
+

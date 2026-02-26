@@ -10,11 +10,13 @@ Usage:
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 import requests
 
 DEFAULT_API_URL = "http://localhost:8000"
+POLL_INTERVAL = 1  # seconds
 
 
 def run(
@@ -66,7 +68,7 @@ def run(
                 "detector_batch_size": detector_batch_size,
                 "device": device,
             },
-            timeout=None,  # inference can take a while
+            timeout=60,
         )
 
     if resp.status_code != 200:
@@ -74,12 +76,53 @@ def run(
         sys.exit(1)
 
     result = resp.json()
-    result_files = result.get("result_files", [])
-    print(f"✓ Inference complete — {len(result_files)} result file(s)")
+    job_id = result["job_id"]
+    print(f"✓ Job submitted — job_id: {job_id}")
 
-    # ── 3. Download results ──────────────────────────────────────────────
+    # ── 3. Poll for status ───────────────────────────────────────────────
+    print(f"\n🔄 Polling job status (every {POLL_INTERVAL}s) ...\n")
+    seen_logs = 0
+
+    while True:
+        try:
+            status_resp = requests.get(f"{api_url}/jobs/{job_id}", timeout=10)
+            status_resp.raise_for_status()
+        except requests.RequestException as e:
+            print(f"  ⚠ Poll error: {e}")
+            time.sleep(POLL_INTERVAL)
+            continue
+
+        job_data = status_resp.json()
+        status = job_data["status"]
+        logs = job_data.get("logs", [])
+        elapsed = job_data.get("elapsed_seconds")
+
+        # Print any new log lines
+        for log_entry in logs[seen_logs:]:
+            ts = log_entry.get("timestamp", "")
+            level = log_entry.get("level", "INFO")
+            msg = log_entry.get("message", "")
+            prefix = "❌" if level == "ERROR" else "  📋"
+            print(f"{prefix} [{level}] {msg}")
+        seen_logs = len(logs)
+
+        if status == "completed":
+            elapsed_str = f" in {elapsed}s" if elapsed else ""
+            print(f"\n✅ Inference completed{elapsed_str}")
+            break
+        elif status == "failed":
+            error = job_data.get("error", "Unknown error")
+            print(f"\n❌ Inference FAILED: {error}")
+            sys.exit(1)
+
+        time.sleep(POLL_INTERVAL)
+
+    # ── 4. Download results ──────────────────────────────────────────────
+    result_files = job_data.get("result_files", [])
+    print(f"\n📥 Downloading {len(result_files)} result file(s) ...")
+
     for fname in result_files:
-        print(f"  ⬇ Downloading {fname} ...", end=" ")
+        print(f"  ⬇ {fname} ...", end=" ")
         dl = requests.get(f"{api_url}/results/{fname}", timeout=120)
         if dl.status_code == 200:
             dest = out / fname

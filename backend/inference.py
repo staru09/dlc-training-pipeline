@@ -44,6 +44,40 @@ def _discover_result_files(
     return sorted(set(results))
 
 
+def _upload_to_gcs(
+    local_files: list[Path],
+    gcs_uri: str,
+) -> None:
+    """
+    Upload files to Google Cloud Storage if GCS_OUTPUT_BUCKET is configured.
+    """
+    if not gcs_uri.startswith("gs://"):
+        logger.warning("Invalid GCS URI: %s", gcs_uri)
+        return
+
+    try:
+        from google.cloud import storage
+    except ImportError:
+        logger.warning("google-cloud-storage not installed, skipping GCS upload.")
+        return
+
+    # Parse gs://bucket/prefix/
+    parts = gcs_uri.replace("gs://", "").split("/", 1)
+    bucket_name = parts[0]
+    prefix = parts[1] if len(parts) > 1 else ""
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+
+    for file_path in local_files:
+        blob_name = f"{prefix}{file_path.name}"
+        blob = bucket.blob(blob_name)
+        logger.info("Uploading %s to gs://%s/%s", file_path.name, bucket_name, blob_name)
+        blob.upload_from_filename(str(file_path))
+
+
 def _copy_results_to_output(
     result_files: list[Path],
     output_dir: Path,
@@ -57,6 +91,10 @@ def _copy_results_to_output(
         if src.parent.resolve() != output_dir.resolve():
             shutil.copy2(src, dst)
         filenames.append(src.name)
+
+    # If GCS upload is configured, upload the final output files
+    if settings.GCS_OUTPUT_BUCKET:
+        _upload_to_gcs(result_files, settings.GCS_OUTPUT_BUCKET)
 
     return filenames
 

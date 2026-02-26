@@ -110,3 +110,15 @@ backend/
 | `batch_size`          | `1`                          | Pose model batch size           |
 | `detector_batch_size` | `1`                          | Detector batch size             |
 | `device`              | `auto`                       | `auto`, `cuda`, `cuda:0`, `cpu` |
+
+## Google Cloud Storage (GCS)
+
+If configured via `DLC_GCS_OUTPUT_BUCKET`, inference result files will be automatically uploaded to GCS.
+
+```bash
+# Example setting locally
+export DLC_GCS_OUTPUT_BUCKET="gs://dlc_bucket/dlc_output_main"
+uvicorn main:app
+```
+
+The `cloudbuild.yaml` handles this environment injection for Cloud Run.
