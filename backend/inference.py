@@ -1,10 +1,3 @@
-"""
-Core inference service — wraps deeplabcut.video_inference_superanimal.
-
-This module is framework-agnostic on the FastAPI side; it only depends on
-DeepLabCut and standard-lib modules.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -44,43 +37,13 @@ def _discover_result_files(
     return sorted(set(results))
 
 
-def _upload_to_gcs(
-    local_files: list[Path],
-    gcs_uri: str,
-) -> None:
-    """
-    Upload files to Google Cloud Storage if GCS_OUTPUT_BUCKET is configured.
-    """
-    if not gcs_uri.startswith("gs://"):
-        logger.warning("Invalid GCS URI: %s", gcs_uri)
-        return
 
-    try:
-        from google.cloud import storage
-    except ImportError:
-        logger.warning("google-cloud-storage not installed, skipping GCS upload.")
-        return
-
-    # Parse gs://bucket/prefix/
-    parts = gcs_uri.replace("gs://", "").split("/", 1)
-    bucket_name = parts[0]
-    prefix = parts[1] if len(parts) > 1 else ""
-    if prefix and not prefix.endswith("/"):
-        prefix += "/"
-
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-
-    for file_path in local_files:
-        blob_name = f"{prefix}{file_path.name}"
-        blob = bucket.blob(blob_name)
-        logger.info("Uploading %s to gs://%s/%s", file_path.name, bucket_name, blob_name)
-        blob.upload_from_filename(str(file_path))
 
 
 def _copy_results_to_output(
     result_files: list[Path],
     output_dir: Path,
+    gcs_output_path: str | None = None,
 ) -> list[str]:
     """Copy result files into the shared output directory and return filenames."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -92,9 +55,11 @@ def _copy_results_to_output(
             shutil.copy2(src, dst)
         filenames.append(src.name)
 
-    # If GCS upload is configured, upload the final output files
-    if settings.GCS_OUTPUT_BUCKET:
-        _upload_to_gcs(result_files, settings.GCS_OUTPUT_BUCKET)
+    # Upload to GCS (per-request path takes priority, then env var fallback)
+    upload_path = gcs_output_path or settings.GCS_OUTPUT_BUCKET
+    if upload_path:
+        from gcs_utils import upload_to_gcs
+        upload_to_gcs(result_files, upload_path)
 
     return filenames
 
@@ -102,6 +67,7 @@ def _copy_results_to_output(
 def run_inference(
     video_path: Path,
     params: InferenceParams,
+    gcs_output_path: str | None = None,
 ) -> dict:
     """
     Run SuperAnimal inference on a single video.
@@ -190,7 +156,9 @@ def run_inference(
             logger.warning("Custom annotated video creation failed: %s", exc)
 
     # Consolidate everything into OUTPUT_DIR
-    filenames = _copy_results_to_output(result_files, settings.OUTPUT_DIR.resolve())
+    filenames = _copy_results_to_output(
+        result_files, settings.OUTPUT_DIR.resolve(), gcs_output_path=gcs_output_path,
+    )
 
     logger.info("Inference complete — %d result file(s)", len(filenames))
     return {

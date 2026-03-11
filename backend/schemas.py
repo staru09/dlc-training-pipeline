@@ -1,7 +1,3 @@
-"""
-Pydantic schemas for request parameters and response models.
-"""
-
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
@@ -101,4 +97,13 @@ class JobStatusResponse(BaseModel):
     logs: list[dict] = Field(default_factory=list)
     result_files: list[str] = Field(default_factory=list)
     error: str | None = None
+
+
+class GCSInferenceResponse(BaseModel):
+    """Returned after a GCS inference task is submitted."""
+
+    success: bool = True
+    message: str
+    task_id: str = Field(description="Job ID — poll /jobs/{task_id} for status")
+
 

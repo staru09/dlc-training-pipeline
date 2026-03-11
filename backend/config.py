@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     UPLOAD_DIR: Path = Path("uploads")
     OUTPUT_DIR: Path = Path("outputs")
     
-    # Cloud Storage Output
+    # Cloud Storage
+    GCS_INPUT_PATH: str = "datacam_videos/processed_videos"  # bucket/folder for input videos
     GCS_OUTPUT_BUCKET: str | None = None  # e.g. "gs://dlc_bucket/dlc_output_main"
 
     # Defaults

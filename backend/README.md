@@ -129,50 +129,47 @@ Process a video stored in Google Cloud Storage. Downloads the input from GCS, ru
 
 **Parameters:**
 
-| Parameter             | Required | Default                         | Description                                              |
-| --------------------- | -------- | ------------------------------- | -------------------------------------------------------- |
-| `source_bucket`       | No       | `DLC_GCS_INPUT_BUCKET` env var  | GCS bucket containing the input video                    |
-| `video_uuid`          | Yes      | —                               | UUID of the input video                                  |
-| `video_blob_path`     | Yes      | —                               | Path to video blob in bucket (e.g. `raw_videos/abc.mp4`) |
-| `gcs_output_path`     | No       | `DLC_GCS_OUTPUT_BUCKET` env var | GCS output path in format `bucket/folder`                |
-| `superanimal_name`    | No       | `superanimal_quadruped`         | SuperAnimal dataset                                      |
-| `model_name`          | No       | `hrnet_w32`                     | Pose estimation model                                    |
-| `detector_name`       | No       | `fasterrcnn_resnet50_fpn_v2`    | Object detector                                          |
-| `max_individuals`     | No       | `1`                             | Max animals in frame                                     |
-| `pcutoff`             | No       | `0.1`                           | Confidence threshold                                     |
-| `batch_size`          | No       | `1`                             | Pose model batch size                                    |
-| `detector_batch_size` | No       | `1`                             | Detector batch size                                      |
-| `device`              | No       | `auto`                          | `auto`, `cuda`, `cuda:0`, `cpu`                          |
+| Parameter             | Required | Default                                       | Description                                                     |
+| --------------------- | -------- | --------------------------------------------- | --------------------------------------------------------------- |
+| `video_name`          | Yes      | —                                             | Video filename in the GCS input bucket                          |
+| `gcs_input_path`      | No       | `DLC_GCS_INPUT_PATH` env var (`datacam_videos/processed_videos`) | GCS input path as `bucket/folder`              |
+| `gcs_output_path`     | No       | `DLC_GCS_OUTPUT_BUCKET` env var               | GCS output path as `bucket/folder`                              |
+| `superanimal_name`    | No       | `superanimal_quadruped`                       | SuperAnimal dataset                                             |
+| `model_name`          | No       | `hrnet_w32`                                   | Pose estimation model                                           |
+| `detector_name`       | No       | `fasterrcnn_resnet50_fpn_v2`                  | Object detector                                                 |
+| `max_individuals`     | No       | `1`                                           | Max animals in frame                                            |
+| `pcutoff`             | No       | `0.1`                                         | Confidence threshold                                            |
+| `batch_size`          | No       | `1`                                           | Pose model batch size                                           |
+| `detector_batch_size` | No       | `1`                                           | Detector batch size                                             |
+| `device`              | No       | `auto`                                        | `auto`, `cuda`, `cuda:0`, `cpu`                                 |
 
-**cURL Example — Basic:**
+**cURL Example — Minimal (just video name, uses defaults):**
 
 ```bash
 curl -X POST "https://<service-url>/infer/gcs" \
-  -F "source_bucket=datacam_videos" \
-  -F "video_uuid=005d0bf7-446c-4a06-867d-5b41e0aa468c" \
-  -F "video_blob_path=raw_videos/005d0bf7-446c-4a06-867d-5b41e0aa468c.mkv" \
-  -F "gcs_output_path=dlc_bucket/dlc_output_main"
+  -F "video_name=my_video.mp4"
 ```
 
-**cURL Example — With default buckets (from env vars):**
+→ Reads from `gs://datacam_videos/processed_videos/my_video.mp4`
+→ Writes to `gs://dlc_bucket/dlc_output_main/`
+
+**cURL Example — Custom input/output paths:**
 
 ```bash
 curl -X POST "https://<service-url>/infer/gcs" \
-  -F "video_uuid=005d0bf7-446c-4a06-867d-5b41e0aa468c" \
-  -F "video_blob_path=raw_videos/005d0bf7-446c-4a06-867d-5b41e0aa468c.mkv"
+  -F "video_name=my_video.mp4" \
+  -F "gcs_input_path=other_bucket/other_folder" \
+  -F "gcs_output_path=dlc_bucket/dlc_output_main"
 ```
 
 **cURL Example — Custom model:**
 
 ```bash
 curl -X POST "https://<service-url>/infer/gcs" \
-  -F "source_bucket=datacam_videos" \
-  -F "video_uuid=005d0bf7-446c-4a06-867d-5b41e0aa468c" \
-  -F "video_blob_path=raw_videos/005d0bf7-446c-4a06-867d-5b41e0aa468c.mkv" \
+  -F "video_name=my_video.mp4" \
   -F "model_name=resnet_50" \
   -F "superanimal_name=superanimal_topviewmouse" \
-  -F "max_individuals=3" \
-  -F "gcs_output_path=dlc_bucket/dlc_output_main"
+  -F "max_individuals=3"
 ```
 
 **Response (Immediate):**
@@ -321,14 +318,11 @@ SERVICE_URL = "https://<service-url>"
 health = requests.get(f"{SERVICE_URL}/").json()
 print(f"API Status: {health['status']}")
 
-# 2. Submit GCS task
+# 2. Submit GCS task (only video_name required — input/output paths use defaults)
 resp = requests.post(
     f"{SERVICE_URL}/infer/gcs",
     data={
-        "source_bucket": "datacam_videos",
-        "video_uuid": "005d0bf7-446c-4a06-867d-5b41e0aa468c",
-        "video_blob_path": "raw_videos/005d0bf7-446c-4a06-867d-5b41e0aa468c.mkv",
-        "gcs_output_path": "dlc_bucket/dlc_output_main",
+        "video_name": "my_video.mp4",
     },
     timeout=30,
 )
@@ -362,12 +356,9 @@ for attempt in range(240):  # 20 minutes max
 ### Use Case 1: Process Video from GCS (Recommended)
 
 ```bash
-# Step 1: Submit task
+# Step 1: Submit task (only video_name required)
 RESPONSE=$(curl -s -X POST "https://<service-url>/infer/gcs" \
-  -F "source_bucket=datacam_videos" \
-  -F "video_uuid=005d0bf7-446c-4a06-867d-5b41e0aa468c" \
-  -F "video_blob_path=raw_videos/005d0bf7-446c-4a06-867d-5b41e0aa468c.mkv" \
-  -F "gcs_output_path=dlc_bucket/dlc_output_main")
+  -F "video_name=my_video.mp4")
 
 JOB_ID=$(echo $RESPONSE | jq -r '.task_id')
 echo "Job ID: $JOB_ID"
@@ -407,12 +398,12 @@ curl -X POST "https://<service-url>/infer" \
 
 ### Environment Variables
 
-| Variable                | Description                         | Example                           |
-| ----------------------- | ----------------------------------- | --------------------------------- |
-| `DLC_GCS_INPUT_BUCKET`  | Default GCS bucket for input videos | `datacam_videos`                  |
-| `DLC_GCS_OUTPUT_BUCKET` | Default GCS path for output results | `gs://dlc_bucket/dlc_output_main` |
+| Variable                | Description                          | Example                              |
+| ----------------------- | ------------------------------------ | ------------------------------------ |
+| `DLC_GCS_INPUT_PATH`    | Default GCS input path (bucket/folder) | `datacam_videos/processed_videos`  |
+| `DLC_GCS_OUTPUT_BUCKET` | Default GCS output path for results  | `gs://dlc_bucket/dlc_output_main`    |
 
-Both can be overridden per request via `source_bucket` and `gcs_output_path` parameters.
+Both can be overridden per request via `gcs_input_path` and `gcs_output_path` parameters.
 
 ### Available Models
 
