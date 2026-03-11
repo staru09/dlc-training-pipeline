@@ -1,6 +1,6 @@
 substitutions:
   _TAG: latest
-  _REGION: us-central1
+  _REGION: europe-west4
   # The bucket where inference results (annotated video, H5, json) should be uploaded
   _OUTPUT_BUCKET: gs://dlc_bucket/dlc_output_main
 
@@ -48,6 +48,7 @@ steps:
       - "--min-instances=0"
       - "--gpu=1"
       - "--gpu-type=nvidia-l4"
+      - "--gpu-no-zonal-redundancy"
       # One inference at a time per instance (GPU can't handle concurrent jobs)
       - "--concurrency=1"
       # Keep CPU active during cold starts
