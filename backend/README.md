@@ -129,7 +129,6 @@ Process a video stored in Google Cloud Storage. Accepts `application/json`. Down
 
 | Field                 | Required | Default                      | Description                                 |
 | --------------------- | -------- | ---------------------------- | ------------------------------------------- |
-| `video_uuid`          | Yes      | —                            | UUID of the video file                      |
 | `gcs_input_path`      | Yes      | —                            | GCS input path: `bucket/folder/video.mp4`   |
 | `gcs_output_path`     | Yes      | —                            | GCS output path: `bucket/folder`            |
 | `superanimal_name`    | No       | `superanimal_quadruped`      | SuperAnimal dataset                         |
@@ -147,7 +146,6 @@ Process a video stored in Google Cloud Storage. Accepts `application/json`. Down
 curl -X POST "https://dlc-api-service-405737646974.europe-west4.run.app/infer/gcs" \
   -H "Content-Type: application/json" \
   -d '{
-    "video_uuid": "4edec7a8-651c-4c10-a653-6b8f9535caf4",
     "gcs_input_path": "datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4",
     "gcs_output_path": "datacam_videos/test_dlc"
   }'
@@ -159,7 +157,6 @@ curl -X POST "https://dlc-api-service-405737646974.europe-west4.run.app/infer/gc
 curl -X POST "https://dlc-api-service-405737646974.europe-west4.run.app/infer/gcs" \
   -H "Content-Type: application/json" \
   -d '{
-    "video_uuid": "4edec7a8-651c-4c10-a653-6b8f9535caf4",
     "gcs_input_path": "datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4",
     "gcs_output_path": "datacam_videos/test_dlc",
     "model_name": "resnet_50",
@@ -312,7 +309,6 @@ SERVICE_URL = "https://dlc-api-service-405737646974.europe-west4.run.app"
 resp = requests.post(
     f"{SERVICE_URL}/infer/gcs",
     json={
-        "video_uuid": "4edec7a8-651c-4c10-a653-6b8f9535caf4",
         "gcs_input_path": "datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4",
         "gcs_output_path": "datacam_videos/test_dlc",
     },
@@ -391,7 +387,6 @@ python run_inference.py --video input.mp4 --output results/ --model resnet_50
 
 ```bash
 python run_inference.py --gcs \
-  --video-uuid 4edec7a8-651c-4c10-a653-6b8f9535caf4 \
   --gcs-input-path datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4 \
   --gcs-output-path datacam_videos/test_dlc \
   --api-url https://dlc-api-service-405737646974.europe-west4.run.app

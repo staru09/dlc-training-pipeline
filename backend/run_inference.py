@@ -92,7 +92,6 @@ def run(
 
 
 def run_gcs(
-    video_uuid: str,
     gcs_input_path: str,
     gcs_output_path: str,
     api_url: str = DEFAULT_API_URL,
@@ -121,7 +120,6 @@ def run_gcs(
 
     # ── 2. Submit GCS task ───────────────────────────────────────────────
     data = {
-        "video_uuid": video_uuid,
         "gcs_input_path": gcs_input_path,
         "gcs_output_path": gcs_output_path,
         "superanimal_name": superanimal_name,
@@ -134,7 +132,8 @@ def run_gcs(
         "device": device,
     }
 
-    print(f"🚀 Submitting GCS task for {video_uuid} ...")
+    video_name = gcs_input_path.rsplit("/", 1)[-1]
+    print(f"Submitting GCS task for {video_name} ...")
     print(f"  Input: {gcs_input_path}")
     print(f"  Output: {gcs_output_path}/")
 
@@ -204,7 +203,7 @@ Examples (file upload):
   python run_inference.py --video video.mp4 --output results/ --model resnet_50
 
 Examples (GCS-to-GCS):
-  python run_inference.py --gcs --video-uuid 4edec7a8-651c-4c10-a653-6b8f9535caf4 --gcs-input-path bucket/folder/video.mp4 --gcs-output-path bucket/output
+  python run_inference.py --gcs --gcs-input-path bucket/folder/video.mp4 --gcs-output-path bucket/output
         """,
     )
     # Mode selection
@@ -216,7 +215,6 @@ Examples (GCS-to-GCS):
     parser.add_argument("--output", "-o", help="Directory to save results (file upload mode)")
 
     # GCS mode args
-    parser.add_argument("--video-uuid", help="UUID of the video file (GCS mode)")
     parser.add_argument("--gcs-input-path",
                         help="GCS input path as bucket/folder/video.mp4 (GCS mode)")
     parser.add_argument("--gcs-output-path",
@@ -241,10 +239,9 @@ Examples (GCS-to-GCS):
     args = parser.parse_args()
 
     if args.gcs:
-        if not args.video_uuid or not args.gcs_input_path or not args.gcs_output_path:
-            parser.error("--video-uuid, --gcs-input-path, and --gcs-output-path are required in GCS mode")
+        if not args.gcs_input_path or not args.gcs_output_path:
+            parser.error("--gcs-input-path and --gcs-output-path are required in GCS mode")
         run_gcs(
-            video_uuid=args.video_uuid,
             gcs_input_path=args.gcs_input_path,
             gcs_output_path=args.gcs_output_path,
             api_url=args.api_url,

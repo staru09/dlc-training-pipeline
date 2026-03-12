@@ -204,13 +204,16 @@ async def infer_gcs(body: GCSInferenceRequest):
         device=body.device,
     )
 
+    # ── Extract video name from input path ──────────────────────────────
+    video_name = body.gcs_input_path.rsplit("/", 1)[-1]
+
     # ── Create job & launch in background ────────────────────────────────
     job = create_job(
-        video_name=body.video_uuid,
+        video_name=video_name,
         model_name=body.model_name,
         superanimal_name=body.superanimal_name,
     )
-    job.add_log(f"GCS task queued: {body.video_uuid} from {body.gcs_input_path}")
+    job.add_log(f"GCS task queued: {video_name} from {body.gcs_input_path}")
 
     run_job_in_background(
         job=job,
