@@ -123,11 +123,14 @@ def run_gcs(
 
     # ── 1. Health check ──────────────────────────────────────────────────
     try:
-        r = requests.get(f"{api_url}/", timeout=5)
+        r = requests.get(f"{api_url}/", timeout=15)
         r.raise_for_status()
         print(f"✓ API is live at {api_url}")
     except requests.ConnectionError:
         print(f"ERROR: Cannot reach API at {api_url}. Is the server running?")
+        sys.exit(1)
+    except requests.Timeout:
+        print(f"ERROR: Timeout reaching {api_url} (cold start?)")
         sys.exit(1)
 
     # ── 2. Submit GCS task ───────────────────────────────────────────────

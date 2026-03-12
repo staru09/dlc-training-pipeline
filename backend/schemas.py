@@ -90,6 +90,12 @@ class JobStatusResponse(BaseModel):
 
     job_id: str
     status: str = Field(description="queued | running | completed | failed")
+    progress: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Progress from 0.0 to 1.0",
+    )
     video_name: str = ""
     model_name: str = ""
     superanimal_name: str = ""

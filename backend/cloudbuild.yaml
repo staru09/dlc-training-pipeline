@@ -49,13 +49,10 @@ steps:
       - "--min-instances=0"
       - "--gpu=1"
       - "--gpu-type=nvidia-l4"
-      - "--gpu-no-zonal-redundancy"
       # One inference at a time per instance (GPU can't handle concurrent jobs)
       - "--concurrency=1"
       # Keep CPU active during cold starts
       - "--no-cpu-throttling"
-      # Set the environment variable so the FastAPI app knows where to upload results
-      - "--set-env-vars=DLC_GCS_OUTPUT_BUCKET=$_OUTPUT_BUCKET,DLC_GCS_INPUT_PATH=$_INPUT_PATH"
 
 images:
   - "$_REGION-docker.pkg.dev/$PROJECT_ID/dlc/dlc-api:$_TAG"

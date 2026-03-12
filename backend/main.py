@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import tempfile
 import uuid
 from pathlib import Path
 
@@ -15,8 +14,7 @@ from config import (
     ensure_dirs,
     settings,
 )
-from gcs_utils import cleanup_local_files, download_from_gcs, upload_to_gcs
-from inference import run_inference
+from inference import run_gcs_inference, run_inference
 from job_manager import create_job, get_job, run_job_in_background
 from schemas import (
     GCSInferenceResponse,
@@ -115,7 +113,6 @@ async def infer(
         )
 
     # ── Save upload ──────────────────────────────────────────────────────
-    suffix = Path(video.filename).suffix or ".mp4"
     unique_name = f"{uuid.uuid4().hex[:10]}_{video.filename}"
     upload_path = settings.UPLOAD_DIR.resolve() / unique_name
 
@@ -167,57 +164,15 @@ async def infer(
 # ── GCS-to-GCS inference endpoint ────────────────────────────────────────────
 
 
-def _run_gcs_inference(
-    video_name: str,
-    gcs_input_path: str,
-    gcs_output_path: str,
-    params: InferenceParams,
-) -> dict:
-    """
-    Download video from GCS → run inference → upload results → cleanup.
-
-    This runs in a background thread via job_manager.
-    """
-    # Parse input bucket and prefix from gcs_input_path (format: bucket/folder)
-    input_parts = gcs_input_path.split("/", 1)
-    input_bucket = input_parts[0]
-    input_prefix = input_parts[1] if len(input_parts) > 1 else ""
-    blob_path = f"{input_prefix}/{video_name}" if input_prefix else video_name
-
-    # Create a temp directory for the whole job
-    tmp_dir = Path(tempfile.mkdtemp(prefix="dlc_gcs_"))
-    result = None
-    try:
-        # 1. Download from GCS
-        local_video = download_from_gcs(input_bucket, blob_path, tmp_dir)
-
-        # 2. Run DLC inference (outputs go to settings.OUTPUT_DIR)
-        result = run_inference(
-            video_path=local_video,
-            params=params,
-            gcs_output_path=gcs_output_path,
-        )
-
-        return result
-    finally:
-        # 3. Cleanup all local temp files
-        cleanup_local_files(tmp_dir)
-        # Also cleanup any output files (they've been uploaded to GCS)
-        if result:
-            for fname in result.get("result_files", []):
-                cleanup_local_files(settings.OUTPUT_DIR.resolve() / fname)
-
-
 @app.post("/infer/gcs", response_model=GCSInferenceResponse)
 async def infer_gcs(
-    video_name: str = Form(..., description="Video filename in the GCS input bucket"),
     gcs_input_path: str = Form(
-        default=None,
-        description="GCS input path as bucket/folder (default: DLC_GCS_INPUT_PATH env var)",
+        ...,
+        description="GCS input path as bucket_name/folder/UUID.mp4",
     ),
     gcs_output_path: str = Form(
-        default=None,
-        description="GCS output path as bucket/folder (default: DLC_GCS_OUTPUT_BUCKET env var)",
+        ...,
+        description="GCS output path as bucket_name/folder",
     ),
     superanimal_name: str = Form(default=settings.DEFAULT_SUPERANIMAL),
     model_name: str = Form(default=settings.DEFAULT_MODEL),
@@ -236,21 +191,6 @@ async def infer_gcs(
     Returns a ``task_id`` immediately. Poll ``GET /jobs/{task_id}`` to
     monitor progress and retrieve results when complete.
     """
-    # Resolve defaults from env vars
-    resolved_input_path = gcs_input_path or settings.GCS_INPUT_PATH
-    resolved_output_path = gcs_output_path or settings.GCS_OUTPUT_BUCKET
-
-    if not resolved_input_path:
-        raise HTTPException(
-            status_code=422,
-            detail="gcs_input_path is required (no default configured via DLC_GCS_INPUT_PATH)",
-        )
-    if not resolved_output_path:
-        raise HTTPException(
-            status_code=422,
-            detail="gcs_output_path is required (no default configured via DLC_GCS_OUTPUT_BUCKET)",
-        )
-
     # ── Validate model choices ───────────────────────────────────────────
     if model_name not in POSE_MODELS:
         raise HTTPException(
@@ -280,20 +220,22 @@ async def infer_gcs(
         device=device,
     )
 
+    # ── Extract video name from input path ──────────────────────────────
+    video_name = gcs_input_path.rsplit("/", 1)[-1]
+
     # ── Create job & launch in background ────────────────────────────────
     job = create_job(
         video_name=video_name,
         model_name=model_name,
         superanimal_name=superanimal_name,
     )
-    job.add_log(f"GCS task queued: {video_name} from {resolved_input_path}")
+    job.add_log(f"GCS task queued: {video_name} from {gcs_input_path}")
 
     run_job_in_background(
         job=job,
-        run_fn=_run_gcs_inference,
-        video_name=video_name,
-        gcs_input_path=resolved_input_path,
-        gcs_output_path=resolved_output_path,
+        run_fn=run_gcs_inference,
+        gcs_input_path=gcs_input_path,
+        gcs_output_path=gcs_output_path,
         params=params,
     )
 

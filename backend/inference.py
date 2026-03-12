@@ -48,18 +48,44 @@ def _copy_results_to_output(
     """Copy result files into the shared output directory and return filenames."""
     output_dir.mkdir(parents=True, exist_ok=True)
     filenames: list[str] = []
+    final_paths: list[Path] = []
+
+    import subprocess
 
     for src in result_files:
         dst = output_dir / src.name
         if src.parent.resolve() != output_dir.resolve():
             shutil.copy2(src, dst)
-        filenames.append(src.name)
+        
+        # Re-encode MP4s to H.264 with faststart so they stream in browsers.
+        # OpenCV's mp4v codec is not browser-compatible; H.264 + moov-at-front is.
+        if dst.suffix.lower() == ".mp4":
+            tmp_dst = dst.with_name(f"temp_{dst.name}")
+            try:
+                subprocess.run(
+                    [
+                        "ffmpeg", "-y", "-i", str(dst),
+                        "-c:v", "libx264", "-preset", "fast",
+                        "-crf", "23", "-pix_fmt", "yuv420p",
+                        "-movflags", "+faststart",
+                        "-an", str(tmp_dst),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+                tmp_dst.replace(dst)
+                logger.info("Re-encoded to H.264 with faststart: %s", dst.name)
+            except Exception as e:
+                logger.warning("Failed to re-encode %s (is ffmpeg installed?): %s", dst.name, e)
 
-    # Upload to GCS (per-request path takes priority, then env var fallback)
-    upload_path = gcs_output_path or settings.GCS_OUTPUT_BUCKET
-    if upload_path:
+        filenames.append(dst.name)
+        final_paths.append(dst)
+
+    # Upload to GCS if output path provided
+    if gcs_output_path:
         from gcs_utils import upload_to_gcs
-        upload_to_gcs(result_files, upload_path)
+        # Upload the processed destination files, not the sources
+        upload_to_gcs(final_paths, gcs_output_path)
 
     return filenames
 
@@ -68,6 +94,7 @@ def run_inference(
     video_path: Path,
     params: InferenceParams,
     gcs_output_path: str | None = None,
+    progress_callback=None,
 ) -> dict:
     """
     Run SuperAnimal inference on a single video.
@@ -85,6 +112,8 @@ def run_inference(
         - result_files : list[str]  — filenames available for download
         - output_dir   : Path       — directory where results live
     """
+    _report = progress_callback or (lambda *a, **kw: None)
+
     # Lazy import so the module loads even without DLC installed (e.g. tests)
     from deeplabcut import video_inference_superanimal
 
@@ -98,6 +127,8 @@ def run_inference(
         params.superanimal_name,
         params.device,
     )
+
+    _report(0.05, f"Starting DLC inference on {video_path.name}")
 
     try:
         video_inference_superanimal(
@@ -125,6 +156,8 @@ def run_inference(
         else:
             raise
 
+    _report(0.55, "DLC inference complete, discovering output files")
+
     # Discover outputs — DLC may write next to the video OR into dest_folder
     result_files: list[Path] = []
     for search_dir in {video_path.parent, settings.OUTPUT_DIR.resolve()}:
@@ -142,6 +175,8 @@ def run_inference(
     if json_files:
         from annotator import create_annotated_video
 
+        _report(0.60, "Creating annotated video")
+
         json_path = json_files[0]
         annotated_path = settings.OUTPUT_DIR.resolve() / f"{video_path.stem}_annotated.mp4"
         try:
@@ -150,19 +185,75 @@ def run_inference(
                 predictions_json_path=json_path,
                 output_path=annotated_path,
                 pcutoff=params.pcutoff,
+                progress_callback=progress_callback,
             )
             result_files.append(annotated_path)
         except Exception as exc:
             logger.warning("Custom annotated video creation failed: %s", exc)
+
+    _report(0.90, "Copying and re-encoding results")
 
     # Consolidate everything into OUTPUT_DIR
     filenames = _copy_results_to_output(
         result_files, settings.OUTPUT_DIR.resolve(), gcs_output_path=gcs_output_path,
     )
 
+    _report(0.95, "Results ready")
+
     logger.info("Inference complete — %d result file(s)", len(filenames))
     return {
         "result_files": filenames,
         "output_dir": settings.OUTPUT_DIR.resolve(),
     }
+
+
+def run_gcs_inference(
+    gcs_input_path: str,
+    gcs_output_path: str,
+    params: InferenceParams,
+    progress_callback=None,
+) -> dict:
+    """
+    Download video from GCS → run inference → upload results → cleanup.
+
+    This is the top-level function spawned as a subprocess by the job manager.
+
+    gcs_input_path: bucket_name/folder/UUID.mp4
+    gcs_output_path: bucket_name/folder
+    """
+    import tempfile
+
+    from gcs_utils import cleanup_local_files, download_from_gcs
+
+    _report = progress_callback or (lambda *a, **kw: None)
+
+    # Parse input: bucket_name/folder/UUID.mp4 → bucket + blob_path
+    input_parts = gcs_input_path.split("/", 1)
+    input_bucket = input_parts[0]
+    blob_path = input_parts[1] if len(input_parts) > 1 else ""
+
+    # Create a temp directory for the whole job
+    tmp_dir = Path(tempfile.mkdtemp(prefix="dlc_gcs_"))
+    result = None
+    try:
+        # 1. Download from GCS
+        _report(0.02, f"Downloading video from gs://{input_bucket}/{blob_path}")
+        local_video = download_from_gcs(input_bucket, blob_path, tmp_dir)
+
+        # 2. Run DLC inference (progress 0.05 → 0.95 reported inside)
+        result = run_inference(
+            video_path=local_video,
+            params=params,
+            gcs_output_path=gcs_output_path,
+            progress_callback=progress_callback,
+        )
+
+        return result
+    finally:
+        # 3. Cleanup all local temp files
+        cleanup_local_files(tmp_dir)
+        # Also cleanup any output files (they've been uploaded to GCS)
+        if result:
+            for fname in result.get("result_files", []):
+                cleanup_local_files(settings.OUTPUT_DIR.resolve() / fname)
 

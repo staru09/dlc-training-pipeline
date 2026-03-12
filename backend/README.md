@@ -119,7 +119,7 @@ curl -X POST "https://<service-url>/infer" \
 }
 ```
 
-**Note:** Poll `GET /jobs/{job_id}` for progress. Download results from `GET /results/{filename}` when complete. If `DLC_GCS_OUTPUT_BUCKET` is set, results are also uploaded to GCS automatically.
+**Note:** Poll `GET /jobs/{job_id}` for progress. Download results from `GET /results/{filename}` when complete.
 
 ---
 
@@ -131,9 +131,8 @@ Process a video stored in Google Cloud Storage. Downloads the input from GCS, ru
 
 | Parameter             | Required | Default                                       | Description                                                     |
 | --------------------- | -------- | --------------------------------------------- | --------------------------------------------------------------- |
-| `video_name`          | Yes      | —                                             | Video filename in the GCS input bucket                          |
-| `gcs_input_path`      | No       | `DLC_GCS_INPUT_PATH` env var (`datacam_videos/processed_videos`) | GCS input path as `bucket/folder`              |
-| `gcs_output_path`     | No       | `DLC_GCS_OUTPUT_BUCKET` env var               | GCS output path as `bucket/folder`                              |
+| `gcs_input_path`      | Yes      | —                                             | GCS input path as `bucket_name/folder/UUID.mp4`                 |
+| `gcs_output_path`     | Yes      | —                                             | GCS output path as `bucket_name/folder`                         |
 | `superanimal_name`    | No       | `superanimal_quadruped`                       | SuperAnimal dataset                                             |
 | `model_name`          | No       | `hrnet_w32`                                   | Pose estimation model                                           |
 | `detector_name`       | No       | `fasterrcnn_resnet50_fpn_v2`                  | Object detector                                                 |
@@ -235,7 +234,8 @@ curl -X GET "https://<service-url>/jobs/a1b2c3d4e5f6"
   "result_files": [
     "005d0bf7_video_annotated.mp4",
     "005d0bf7_video_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2_.h5",
-    "005d0bf7_video_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2__before_adapt.json"
+    "005d0bf7_video_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2__before_adapt.json",
+    "005d0bf7_video_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2_labeled_before_adapt.mp4"
   ],
   "error": null
 }
@@ -396,14 +396,12 @@ curl -X POST "https://<service-url>/infer" \
 
 ## ⚙️ Configuration
 
-### Environment Variables
+### GCS Paths
 
-| Variable                | Description                          | Example                              |
-| ----------------------- | ------------------------------------ | ------------------------------------ |
-| `DLC_GCS_INPUT_PATH`    | Default GCS input path (bucket/folder) | `datacam_videos/processed_videos`  |
-| `DLC_GCS_OUTPUT_BUCKET` | Default GCS output path for results  | `gs://dlc_bucket/dlc_output_main`    |
+Both `gcs_input_path` and `gcs_output_path` are required per request — there are no default values.
 
-Both can be overridden per request via `gcs_input_path` and `gcs_output_path` parameters.
+- **Input path format:** `bucket_name/folder/UUID.mp4`
+- **Output path format:** `bucket_name/folder`
 
 ### Available Models
 
@@ -423,10 +421,11 @@ Both can be overridden per request via `gcs_input_path` and `gcs_output_path` pa
 
 Each inference run produces:
 
-- `*_annotated.mp4` — Video with keypoints and bounding boxes overlaid
-- `*.h5` — Pose predictions (HDF5)
-- `*.json` — Per-frame predictions (JSON)
-- `*.pickle` — Full predictions
+- `*_annotated.mp4` — Final nicely annotated video with keypoints and bounding boxes
+- `*.h5` — Pose predictions (HDF5 format)
+- `*_before_adapt.json` — Per-frame predictions (JSON)
+- `*_labeled_before_adapt.mp4` — Raw labeled video output directly from DeepLabCut
+- `*.pickle` — Full predictions (if applicable)
 
 ---
 

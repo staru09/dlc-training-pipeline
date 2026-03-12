@@ -13,10 +13,6 @@ class Settings(BaseSettings):
     UPLOAD_DIR: Path = Path("uploads")
     OUTPUT_DIR: Path = Path("outputs")
     
-    # Cloud Storage
-    GCS_INPUT_PATH: str = "datacam_videos/processed_videos"  # bucket/folder for input videos
-    GCS_OUTPUT_BUCKET: str | None = None  # e.g. "gs://dlc_bucket/dlc_output_main"
-
     # Defaults
     DEFAULT_SUPERANIMAL: str = "superanimal_quadruped"
     DEFAULT_MODEL: str = "hrnet_w32"

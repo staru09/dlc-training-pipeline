@@ -32,6 +32,7 @@ def create_annotated_video(
     pcutoff: float = 0.1,
     dot_size: int = 4,
     draw_bboxes: bool = True,
+    progress_callback=None,
 ) -> Path:
     """
     Overlay keypoints (and optionally bboxes) from the DLC JSON predictions
@@ -83,6 +84,9 @@ def create_annotated_video(
         video_path.name, output_path.name, total_frames, fps, width, height,
     )
 
+    # Progress range for annotation phase: 0.60 → 0.90
+    PROG_START, PROG_END = 0.60, 0.90
+
     frame_idx = 0
     while True:
         ret, frame = cap.read()
@@ -98,6 +102,12 @@ def create_annotated_video(
 
         if frame_idx % 200 == 0:
             logger.info("  frame %d / %d", frame_idx, total_frames)
+
+        # Report frame-level progress
+        if progress_callback and total_frames > 0 and frame_idx % 50 == 0:
+            frac = frame_idx / total_frames
+            prog = PROG_START + frac * (PROG_END - PROG_START)
+            progress_callback(prog, f"Annotating: frame {frame_idx}/{total_frames}")
 
     cap.release()
     writer.release()
