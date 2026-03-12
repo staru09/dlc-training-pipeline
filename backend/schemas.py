@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+import uuid
+
+from pydantic import BaseModel, Field, field_validator
 
 from config import (
     DETECTORS,
@@ -103,6 +105,29 @@ class JobStatusResponse(BaseModel):
     logs: list[dict] = Field(default_factory=list)
     result_files: list[str] = Field(default_factory=list)
     error: str | None = None
+
+
+class GCSInferenceRequest(InferenceParams):
+    """JSON body for the GCS-to-GCS inference endpoint."""
+
+    video_uuid: str = Field(
+        ..., description="UUID of the video file"
+    )
+    gcs_input_path: str = Field(
+        ..., description="GCS input path as bucket_name/folder/video.mp4"
+    )
+    gcs_output_path: str = Field(
+        ..., description="GCS output path as bucket_name/folder"
+    )
+
+    @field_validator("video_uuid")
+    @classmethod
+    def validate_video_uuid(cls, v: str) -> str:
+        try:
+            uuid.UUID(v)
+        except ValueError:
+            raise ValueError(f"Invalid UUID: {v}")
+        return v
 
 
 class GCSInferenceResponse(BaseModel):

@@ -1,8 +1,3 @@
-"""
-Custom video annotator — draws keypoints + bounding boxes onto the original
-video using OpenCV, bypassing DLC's broken create_video (pandas 2.x issue).
-"""
-
 from __future__ import annotations
 
 import json
@@ -14,7 +9,6 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# ── Colour palette (one per keypoint index, cycles if >len) ──────────────────
 _PALETTE = [
     (0, 255, 0), (255, 0, 0), (0, 0, 255), (255, 255, 0),
     (255, 0, 255), (0, 255, 255), (128, 255, 0), (255, 128, 0),
@@ -75,13 +69,23 @@ def create_annotated_video(
     if output_path is None:
         output_path = predictions_json_path.parent / f"{video_path.stem}_annotated.mp4"
 
-    # Use mp4v codec (universally supported)
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    # Prefer H.264 (avc1) for browser compatibility; fall back to mp4v
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
     writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+    if not writer.isOpened():
+        logger.warning("avc1 codec unavailable, falling back to mp4v")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+        codec_name = "mp4v"
+    else:
+        codec_name = "avc1"
+
+    if not writer.isOpened():
+        raise RuntimeError(f"Failed to open VideoWriter for {output_path} (tried avc1 and mp4v)")
 
     logger.info(
-        "Annotating %s → %s  (%d frames, %.1f fps, %dx%d)",
-        video_path.name, output_path.name, total_frames, fps, width, height,
+        "Annotating %s → %s  (codec=%s, %d frames, %.1f fps, %dx%d)",
+        video_path.name, output_path.name, codec_name, total_frames, fps, width, height,
     )
 
     # Progress range for annotation phase: 0.60 → 0.90
@@ -112,7 +116,11 @@ def create_annotated_video(
     cap.release()
     writer.release()
 
-    logger.info("Annotated video saved → %s", output_path)
+    size_mb = output_path.stat().st_size / 1e6
+    logger.info(
+        "Annotated video saved → %s (codec=%s, %d frames, %.2f MB)",
+        output_path, codec_name, frame_idx, size_mb,
+    )
     return output_path
 
 

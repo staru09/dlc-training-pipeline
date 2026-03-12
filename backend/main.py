@@ -17,6 +17,7 @@ from config import (
 from inference import run_gcs_inference, run_inference
 from job_manager import create_job, get_job, run_job_in_background
 from schemas import (
+    GCSInferenceRequest,
     GCSInferenceResponse,
     HealthResponse,
     InferenceParams,
@@ -165,24 +166,7 @@ async def infer(
 
 
 @app.post("/infer/gcs", response_model=GCSInferenceResponse)
-async def infer_gcs(
-    gcs_input_path: str = Form(
-        ...,
-        description="GCS input path as bucket_name/folder/UUID.mp4",
-    ),
-    gcs_output_path: str = Form(
-        ...,
-        description="GCS output path as bucket_name/folder",
-    ),
-    superanimal_name: str = Form(default=settings.DEFAULT_SUPERANIMAL),
-    model_name: str = Form(default=settings.DEFAULT_MODEL),
-    detector_name: str = Form(default=settings.DEFAULT_DETECTOR),
-    max_individuals: int = Form(default=settings.DEFAULT_MAX_INDIVIDUALS),
-    pcutoff: float = Form(default=settings.DEFAULT_PCUTOFF),
-    batch_size: int = Form(default=settings.DEFAULT_BATCH_SIZE),
-    detector_batch_size: int = Form(default=settings.DEFAULT_DETECTOR_BATCH_SIZE),
-    device: str = Form(default=settings.DEFAULT_DEVICE),
-):
+async def infer_gcs(body: GCSInferenceRequest):
     """
     Process a video from GCS. Downloads the input from a GCS bucket, runs
     DLC SuperAnimal inference, uploads results to GCS, and cleans up
@@ -192,50 +176,47 @@ async def infer_gcs(
     monitor progress and retrieve results when complete.
     """
     # ── Validate model choices ───────────────────────────────────────────
-    if model_name not in POSE_MODELS:
+    if body.model_name not in POSE_MODELS:
         raise HTTPException(
             status_code=422,
-            detail=f"Unknown model '{model_name}'. Choose from: {POSE_MODELS}",
+            detail=f"Unknown model '{body.model_name}'. Choose from: {POSE_MODELS}",
         )
-    if detector_name not in DETECTORS:
+    if body.detector_name not in DETECTORS:
         raise HTTPException(
             status_code=422,
-            detail=f"Unknown detector '{detector_name}'. Choose from: {DETECTORS}",
+            detail=f"Unknown detector '{body.detector_name}'. Choose from: {DETECTORS}",
         )
-    if superanimal_name not in SUPERANIMAL_DATASETS:
+    if body.superanimal_name not in SUPERANIMAL_DATASETS:
         raise HTTPException(
             status_code=422,
-            detail=f"Unknown dataset '{superanimal_name}'. Choose from: {SUPERANIMAL_DATASETS}",
+            detail=f"Unknown dataset '{body.superanimal_name}'. Choose from: {SUPERANIMAL_DATASETS}",
         )
 
     # ── Build params ─────────────────────────────────────────────────────
     params = InferenceParams(
-        superanimal_name=superanimal_name,
-        model_name=model_name,
-        detector_name=detector_name,
-        max_individuals=max_individuals,
-        pcutoff=pcutoff,
-        batch_size=batch_size,
-        detector_batch_size=detector_batch_size,
-        device=device,
+        superanimal_name=body.superanimal_name,
+        model_name=body.model_name,
+        detector_name=body.detector_name,
+        max_individuals=body.max_individuals,
+        pcutoff=body.pcutoff,
+        batch_size=body.batch_size,
+        detector_batch_size=body.detector_batch_size,
+        device=body.device,
     )
-
-    # ── Extract video name from input path ──────────────────────────────
-    video_name = gcs_input_path.rsplit("/", 1)[-1]
 
     # ── Create job & launch in background ────────────────────────────────
     job = create_job(
-        video_name=video_name,
-        model_name=model_name,
-        superanimal_name=superanimal_name,
+        video_name=body.video_uuid,
+        model_name=body.model_name,
+        superanimal_name=body.superanimal_name,
     )
-    job.add_log(f"GCS task queued: {video_name} from {gcs_input_path}")
+    job.add_log(f"GCS task queued: {body.video_uuid} from {body.gcs_input_path}")
 
     run_job_in_background(
         job=job,
         run_fn=run_gcs_inference,
-        gcs_input_path=gcs_input_path,
-        gcs_output_path=gcs_output_path,
+        gcs_input_path=body.gcs_input_path,
+        gcs_output_path=body.gcs_output_path,
         params=params,
     )
 

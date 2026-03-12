@@ -1,17 +1,3 @@
-#!/usr/bin/env python3
-"""
-Client script to run inference via the FastAPI backend.
-
-Usage (file upload):
-    python run_inference.py --video /path/to/input.mp4 --output /path/to/output_dir
-    python run_inference.py --video input.mp4 --output results/ --model resnet_50
-
-Usage (GCS-to-GCS):
-    python run_inference.py --gcs --video-name my_video.mp4
-    python run_inference.py --gcs --video-name my_video.mp4 --gcs-input-path other_bucket/folder
-    python run_inference.py --gcs --video-name my_video.mp4 --gcs-output-path dlc_bucket/output
-"""
-
 import argparse
 import sys
 import time
@@ -106,10 +92,10 @@ def run(
 
 
 def run_gcs(
-    video_name: str,
+    video_uuid: str,
+    gcs_input_path: str,
+    gcs_output_path: str,
     api_url: str = DEFAULT_API_URL,
-    gcs_input_path: str | None = None,
-    gcs_output_path: str | None = None,
     model_name: str = "hrnet_w32",
     detector_name: str = "fasterrcnn_resnet50_fpn_v2",
     superanimal_name: str = "superanimal_quadruped",
@@ -135,7 +121,9 @@ def run_gcs(
 
     # ── 2. Submit GCS task ───────────────────────────────────────────────
     data = {
-        "video_name": video_name,
+        "video_uuid": video_uuid,
+        "gcs_input_path": gcs_input_path,
+        "gcs_output_path": gcs_output_path,
         "superanimal_name": superanimal_name,
         "model_name": model_name,
         "detector_name": detector_name,
@@ -145,19 +133,13 @@ def run_gcs(
         "detector_batch_size": detector_batch_size,
         "device": device,
     }
-    if gcs_input_path:
-        data["gcs_input_path"] = gcs_input_path
-    if gcs_output_path:
-        data["gcs_output_path"] = gcs_output_path
 
-    print(f"🚀 Submitting GCS task for {video_name} ...")
-    if gcs_input_path:
-        print(f"  Input: {gcs_input_path}/{video_name}")
-    if gcs_output_path:
-        print(f"  Output: {gcs_output_path}/")
+    print(f"🚀 Submitting GCS task for {video_uuid} ...")
+    print(f"  Input: {gcs_input_path}")
+    print(f"  Output: {gcs_output_path}/")
 
     try:
-        resp = requests.post(f"{api_url}/infer/gcs", data=data, timeout=30)
+        resp = requests.post(f"{api_url}/infer/gcs", json=data, timeout=30)
         resp.raise_for_status()
     except requests.RequestException as e:
         print(f"ERROR: Failed to submit task: {e}")
@@ -222,8 +204,7 @@ Examples (file upload):
   python run_inference.py --video video.mp4 --output results/ --model resnet_50
 
 Examples (GCS-to-GCS):
-  python run_inference.py --gcs --video-name my_video.mp4
-  python run_inference.py --gcs --video-name my_video.mp4 --gcs-input-path other_bucket/folder
+  python run_inference.py --gcs --video-uuid 4edec7a8-651c-4c10-a653-6b8f9535caf4 --gcs-input-path bucket/folder/video.mp4 --gcs-output-path bucket/output
         """,
     )
     # Mode selection
@@ -235,11 +216,11 @@ Examples (GCS-to-GCS):
     parser.add_argument("--output", "-o", help="Directory to save results (file upload mode)")
 
     # GCS mode args
-    parser.add_argument("--video-name", help="Video filename in GCS bucket (GCS mode)")
-    parser.add_argument("--gcs-input-path", default=None,
-                        help="GCS input path as bucket/folder (default: server config)")
-    parser.add_argument("--gcs-output-path", default=None,
-                        help="GCS output path as bucket/folder (default: server config)")
+    parser.add_argument("--video-uuid", help="UUID of the video file (GCS mode)")
+    parser.add_argument("--gcs-input-path",
+                        help="GCS input path as bucket/folder/video.mp4 (GCS mode)")
+    parser.add_argument("--gcs-output-path",
+                        help="GCS output path as bucket/folder (GCS mode)")
 
     # Common args
     parser.add_argument("--api-url", default=DEFAULT_API_URL,
@@ -260,13 +241,13 @@ Examples (GCS-to-GCS):
     args = parser.parse_args()
 
     if args.gcs:
-        if not args.video_name:
-            parser.error("--video-name is required in GCS mode")
+        if not args.video_uuid or not args.gcs_input_path or not args.gcs_output_path:
+            parser.error("--video-uuid, --gcs-input-path, and --gcs-output-path are required in GCS mode")
         run_gcs(
-            video_name=args.video_name,
-            api_url=args.api_url,
+            video_uuid=args.video_uuid,
             gcs_input_path=args.gcs_input_path,
             gcs_output_path=args.gcs_output_path,
+            api_url=args.api_url,
             model_name=args.model,
             detector_name=args.detector,
             superanimal_name=args.superanimal,

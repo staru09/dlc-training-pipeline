@@ -1,7 +1,3 @@
-"""
-Backend configuration — model registry, paths, and defaults.
-"""
-
 from pathlib import Path
 from pydantic_settings import BaseSettings
 
@@ -50,6 +46,5 @@ SUPERANIMAL_DATASETS: list[str] = [
 
 
 def ensure_dirs() -> None:
-    """Create upload/output directories if they don't exist."""
     settings.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     settings.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

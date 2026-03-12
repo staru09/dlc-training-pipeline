@@ -1,9 +1,6 @@
 substitutions:
   _TAG: latest
   _REGION: europe-west4
-  # GCS paths for input/output
-  _INPUT_PATH: datacam_videos/processed_videos
-  _OUTPUT_BUCKET: gs://dlc_bucket/dlc_output_main
 
 steps:
   # Step 1: Build Docker image

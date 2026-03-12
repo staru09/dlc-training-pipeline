@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "WebSearch",
-      "WebFetch(domain:hub.docker.com)"
+      "WebFetch(domain:hub.docker.com)",
+      "Bash(curl -s -X POST \"https://dlc-api-service-405737646974.europe-west4.run.app/infer/gcs\" \\\\\n  -d \"gcs_input_path=datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4\" \\\\\n  -d \"gcs_output_path=datacam_videos/test_dlc\")",
+      "Bash(curl -s \"https://dlc-api-service-405737646974.europe-west4.run.app/jobs/3b63e89fac6f\" | python -m json.tool)",
+      "Bash(sleep 30 && curl -s \"https://dlc-api-service-405737646974.europe-west4.run.app/jobs/3b63e89fac6f\" | python -m json.tool)",
+      "Bash(curl -s -o /tmp/annotated.mp4 \"https://storage.googleapis.com/datacam_videos/test_dlc/4edec7a8-651c-4c10-a653-6b8f9535caf4_annotated.mp4\" && ffprobe -v quiet -print_format json -show_format -show_streams /tmp/annotated.mp4)"
     ]
   }
 }

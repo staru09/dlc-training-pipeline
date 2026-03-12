@@ -1,19 +1,13 @@
-# --- Core deps (install order matters for wheel compatibility) ---
-# Pin scipy to a version with pre-built wheels for Python 3.10 / linux-x86_64.
-# Must be installed before deeplabcut to prevent source-build failures.
 numpy>=1.23.0,<2.0.0
 scipy>=1.11.0,<1.14.0
 
-# --- App framework ---
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 python-multipart>=0.0.6
 pydantic>=2.0.0
 pydantic-settings>=2.0.0
 
-# --- ML / CV ---
 opencv-python-headless>=4.8.0
 deeplabcut>=3.0.0.rc4
 
-# --- Cloud ---
 google-cloud-storage>=2.10.0
