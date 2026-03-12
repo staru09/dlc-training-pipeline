@@ -127,11 +127,25 @@ class _StreamToQueue:
 # ── Child-process worker (must be a top-level function for pickling) ─────────
 
 
+class _QueueLogHandler(logging.Handler):
+    """Send Python logging records from the child process to the parent via Queue."""
+
+    def __init__(self, queue: mp.Queue):
+        super().__init__()
+        self.queue = queue
+
+    def emit(self, record: logging.LogRecord) -> None:
+        level = record.levelname
+        message = self.format(record)
+        self.queue.put(("log", level, message))
+
+
 def _subprocess_worker(queue: mp.Queue, run_fn, args: tuple, kwargs: dict):
     """
     Runs inside a spawned child process.
 
     - Redirects stdout / stderr so all DLC / library output is captured.
+    - Routes Python logging to the parent via Queue.
     - Injects a ``progress_callback`` into *kwargs* so the work function
       can report progress.
     - Sends result or error back through the queue.
@@ -139,6 +153,14 @@ def _subprocess_worker(queue: mp.Queue, run_fn, args: tuple, kwargs: dict):
     # Redirect stdout / stderr
     sys.stdout = _StreamToQueue(queue, "INFO")
     sys.stderr = _StreamToQueue(queue, "WARNING")
+
+    # Route all Python logging in the child process to the Queue
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    queue_handler = _QueueLogHandler(queue)
+    queue_handler.setFormatter(logging.Formatter("%(name)s │ %(message)s"))
+    root_logger.addHandler(queue_handler)
+    root_logger.setLevel(logging.INFO)
 
     reporter = ProgressReporter(queue)
     kwargs["progress_callback"] = reporter
@@ -157,6 +179,15 @@ def _subprocess_worker(queue: mp.Queue, run_fn, args: tuple, kwargs: dict):
 # ── Queue monitor (runs in a daemon thread in the *main* process) ────────────
 
 
+_LOG_LEVEL_MAP = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+}
+
+
 def _monitor_queue(job: Job, process: mp.Process, queue: mp.Queue) -> None:
     """Read messages from the child until it exits, updating the Job."""
     while process.is_alive() or not queue.empty():
@@ -171,9 +202,14 @@ def _monitor_queue(job: Job, process: mp.Process, queue: mp.Queue) -> None:
             job.progress = float(progress_val)
             if message:
                 job.add_log(message)
+                logger.info("[job %s] %s", job.id, message)
         elif kind == "log":
             _, level, message = msg
             job.add_log(message, level=level)
+            logger.log(
+                _LOG_LEVEL_MAP.get(level, logging.INFO),
+                "[job %s] %s", job.id, message,
+            )
         elif kind == "result":
             _, result = msg
             job.result = result
@@ -182,9 +218,11 @@ def _monitor_queue(job: Job, process: mp.Process, queue: mp.Queue) -> None:
             job.add_log(
                 f"Inference completed — {len(result.get('result_files', []))} file(s)"
             )
+            logger.info("[job %s] Completed — %d file(s)", job.id, len(result.get('result_files', [])))
         elif kind == "error":
             _, error_msg = msg
             job.status = JobStatus.FAILED
+            logger.error("[job %s] FAILED: %s", job.id, error_msg)
             job.error = error_msg
             job.add_log(f"Inference FAILED: {error_msg}", level="ERROR")
 
