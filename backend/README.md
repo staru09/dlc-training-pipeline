@@ -2,37 +2,35 @@
 
 GPU-accelerated animal pose estimation API powered by DeepLabCut SuperAnimal, deployed on Google Cloud Run.
 
-## 🌐 Service URL
+## Service URL
 
 ```
-https://<your-cloud-run-service-url>
+https://dlc-api-service-405737646974.europe-west4.run.app
 ```
-
-Replace with your actual deployed Cloud Run service URL.
 
 ---
 
-## 📋 Available Endpoints
+## Available Endpoints
 
 | Method | Path                  | Description                                                              |
 | ------ | --------------------- | ------------------------------------------------------------------------ |
 | `GET`  | `/`                   | Health check                                                             |
 | `GET`  | `/models`             | List available models, detectors, datasets                               |
-| `POST` | `/infer`              | Upload video file + run inference (synchronous upload, async processing) |
-| `POST` | `/infer/gcs`          | GCS-to-GCS inference (async, recommended for production)                 |
+| `POST` | `/infer`              | Upload video file + run inference (multipart/form-data)                  |
+| `POST` | `/infer/gcs`          | GCS-to-GCS inference (application/json, recommended for production)      |
 | `GET`  | `/jobs/{job_id}`      | Poll job status and progress                                             |
 | `GET`  | `/results/{filename}` | Download result files                                                    |
 
 ---
 
-## 🔍 Endpoint Details & Examples
+## Endpoint Details & Examples
 
 ### 1. **GET /** — Health Check
 
 Quick liveness probe.
 
 ```bash
-curl -X GET "https://<service-url>/"
+curl -X GET "https://dlc-api-service-405737646974.europe-west4.run.app/"
 ```
 
 **Response:**
@@ -51,7 +49,7 @@ curl -X GET "https://<service-url>/"
 Return every model, detector, and dataset the user can choose from.
 
 ```bash
-curl -X GET "https://<service-url>/models"
+curl -X GET "https://dlc-api-service-405737646974.europe-west4.run.app/models"
 ```
 
 **Response:**
@@ -77,9 +75,9 @@ curl -X GET "https://<service-url>/models"
 
 ---
 
-### 3. **POST /infer** — Video File Upload (Async Processing)
+### 3. **POST /infer** — Video File Upload
 
-Upload a video file directly. Returns a `job_id` immediately; processing runs in the background.
+Upload a video file directly via `multipart/form-data`. Returns a `job_id` immediately; processing runs in the background.
 
 **Parameters:**
 
@@ -98,7 +96,7 @@ Upload a video file directly. Returns a `job_id` immediately; processing runs in
 **cURL Example:**
 
 ```bash
-curl -X POST "https://<service-url>/infer" \
+curl -X POST "https://dlc-api-service-405737646974.europe-west4.run.app/infer" \
   -F "video=@input_video.mp4" \
   -F "model_name=hrnet_w32" \
   -F "superanimal_name=superanimal_quadruped" \
@@ -119,59 +117,58 @@ curl -X POST "https://<service-url>/infer" \
 }
 ```
 
-**Note:** Poll `GET /jobs/{job_id}` for progress. Download results from `GET /results/{filename}` when complete.
+Poll `GET /jobs/{job_id}` for progress. Download results from `GET /results/{filename}` when complete.
 
 ---
 
-### 4. **POST /infer/gcs** — GCS-to-GCS Inference (Async, Recommended)
+### 4. **POST /infer/gcs** — GCS-to-GCS Inference (Recommended)
 
-Process a video stored in Google Cloud Storage. Downloads the input from GCS, runs inference, uploads results back to GCS, and cleans up all local files. Returns a `job_id` immediately.
+Process a video stored in Google Cloud Storage. Accepts `application/json`. Downloads the input from GCS, runs inference, uploads results back to GCS, and cleans up all local files. Returns a `task_id` immediately.
 
-**Parameters:**
+**Request Body (JSON):**
 
-| Parameter             | Required | Default                                       | Description                                                     |
-| --------------------- | -------- | --------------------------------------------- | --------------------------------------------------------------- |
-| `gcs_input_path`      | Yes      | —                                             | GCS input path as `bucket_name/folder/UUID.mp4`                 |
-| `gcs_output_path`     | Yes      | —                                             | GCS output path as `bucket_name/folder`                         |
-| `superanimal_name`    | No       | `superanimal_quadruped`                       | SuperAnimal dataset                                             |
-| `model_name`          | No       | `hrnet_w32`                                   | Pose estimation model                                           |
-| `detector_name`       | No       | `fasterrcnn_resnet50_fpn_v2`                  | Object detector                                                 |
-| `max_individuals`     | No       | `1`                                           | Max animals in frame                                            |
-| `pcutoff`             | No       | `0.1`                                         | Confidence threshold                                            |
-| `batch_size`          | No       | `1`                                           | Pose model batch size                                           |
-| `detector_batch_size` | No       | `1`                                           | Detector batch size                                             |
-| `device`              | No       | `auto`                                        | `auto`, `cuda`, `cuda:0`, `cpu`                                 |
+| Field                 | Required | Default                      | Description                                 |
+| --------------------- | -------- | ---------------------------- | ------------------------------------------- |
+| `video_uuid`          | Yes      | —                            | UUID of the video file                      |
+| `gcs_input_path`      | Yes      | —                            | GCS input path: `bucket/folder/video.mp4`   |
+| `gcs_output_path`     | Yes      | —                            | GCS output path: `bucket/folder`            |
+| `superanimal_name`    | No       | `superanimal_quadruped`      | SuperAnimal dataset                         |
+| `model_name`          | No       | `hrnet_w32`                  | Pose estimation model                       |
+| `detector_name`       | No       | `fasterrcnn_resnet50_fpn_v2` | Object detector                             |
+| `max_individuals`     | No       | `1`                          | Max animals in frame                        |
+| `pcutoff`             | No       | `0.1`                        | Confidence threshold                        |
+| `batch_size`          | No       | `1`                          | Pose model batch size                       |
+| `detector_batch_size` | No       | `1`                          | Detector batch size                         |
+| `device`              | No       | `auto`                       | `auto`, `cuda`, `cuda:0`, `cpu`             |
 
-**cURL Example — Minimal (just video name, uses defaults):**
-
-```bash
-curl -X POST "https://<service-url>/infer/gcs" \
-  -F "video_name=my_video.mp4"
-```
-
-→ Reads from `gs://datacam_videos/processed_videos/my_video.mp4`
-→ Writes to `gs://dlc_bucket/dlc_output_main/`
-
-**cURL Example — Custom input/output paths:**
+**cURL Example — Minimal (defaults for model params):**
 
 ```bash
-curl -X POST "https://<service-url>/infer/gcs" \
-  -F "video_name=my_video.mp4" \
-  -F "gcs_input_path=other_bucket/other_folder" \
-  -F "gcs_output_path=dlc_bucket/dlc_output_main"
+curl -X POST "https://dlc-api-service-405737646974.europe-west4.run.app/infer/gcs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_uuid": "4edec7a8-651c-4c10-a653-6b8f9535caf4",
+    "gcs_input_path": "datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4",
+    "gcs_output_path": "datacam_videos/test_dlc"
+  }'
 ```
 
 **cURL Example — Custom model:**
 
 ```bash
-curl -X POST "https://<service-url>/infer/gcs" \
-  -F "video_name=my_video.mp4" \
-  -F "model_name=resnet_50" \
-  -F "superanimal_name=superanimal_topviewmouse" \
-  -F "max_individuals=3"
+curl -X POST "https://dlc-api-service-405737646974.europe-west4.run.app/infer/gcs" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_uuid": "4edec7a8-651c-4c10-a653-6b8f9535caf4",
+    "gcs_input_path": "datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4",
+    "gcs_output_path": "datacam_videos/test_dlc",
+    "model_name": "resnet_50",
+    "superanimal_name": "superanimal_topviewmouse",
+    "max_individuals": 3
+  }'
 ```
 
-**Response (Immediate):**
+**Response:**
 
 ```json
 {
@@ -181,7 +178,7 @@ curl -X POST "https://<service-url>/infer/gcs" \
 }
 ```
 
-**Note:** Use the returned `task_id` to poll for progress using `GET /jobs/{task_id}`.
+Use the returned `task_id` to poll for progress using `GET /jobs/{task_id}`.
 
 ---
 
@@ -190,7 +187,7 @@ curl -X POST "https://<service-url>/infer/gcs" \
 Check the progress of any inference job (from `/infer` or `/infer/gcs`).
 
 ```bash
-curl -X GET "https://<service-url>/jobs/a1b2c3d4e5f6"
+curl -X GET "https://dlc-api-service-405737646974.europe-west4.run.app/jobs/a1b2c3d4e5f6"
 ```
 
 **Response (While Processing):**
@@ -199,7 +196,8 @@ curl -X GET "https://<service-url>/jobs/a1b2c3d4e5f6"
 {
   "job_id": "a1b2c3d4e5f6",
   "status": "running",
-  "video_name": "005d0bf7-446c-4a06-867d-5b41e0aa468c.mkv",
+  "progress": 0.55,
+  "video_name": "4edec7a8-651c-4c10-a653-6b8f9535caf4",
   "model_name": "hrnet_w32",
   "superanimal_name": "superanimal_quadruped",
   "elapsed_seconds": 12.5,
@@ -207,12 +205,7 @@ curl -X GET "https://<service-url>/jobs/a1b2c3d4e5f6"
     {
       "timestamp": 1710000000.0,
       "level": "INFO",
-      "message": "Inference started"
-    },
-    {
-      "timestamp": 1710000005.0,
-      "level": "INFO",
-      "message": "Starting inference | video=..."
+      "message": "Inference started (subprocess)"
     }
   ],
   "result_files": [],
@@ -226,16 +219,17 @@ curl -X GET "https://<service-url>/jobs/a1b2c3d4e5f6"
 {
   "job_id": "a1b2c3d4e5f6",
   "status": "completed",
-  "video_name": "005d0bf7-446c-4a06-867d-5b41e0aa468c.mkv",
+  "progress": 1.0,
+  "video_name": "4edec7a8-651c-4c10-a653-6b8f9535caf4",
   "model_name": "hrnet_w32",
   "superanimal_name": "superanimal_quadruped",
   "elapsed_seconds": 45.3,
   "logs": [...],
   "result_files": [
-    "005d0bf7_video_annotated.mp4",
-    "005d0bf7_video_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2_.h5",
-    "005d0bf7_video_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2__before_adapt.json",
-    "005d0bf7_video_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2_labeled_before_adapt.mp4"
+    "4edec7a8-651c-4c10-a653-6b8f9535caf4_annotated.mp4",
+    "4edec7a8-651c-4c10-a653-6b8f9535caf4_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2_.h5",
+    "4edec7a8-651c-4c10-a653-6b8f9535caf4_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2__before_adapt.json",
+    "4edec7a8-651c-4c10-a653-6b8f9535caf4_superanimal_quadruped_hrnet_w32_fasterrcnn_resnet50_fpn_v2_labeled_before_adapt.mp4"
   ],
   "error": null
 }
@@ -257,20 +251,20 @@ curl -X GET "https://<service-url>/jobs/a1b2c3d4e5f6"
 Download a result file produced by inference. Only available for `/infer` jobs (GCS jobs upload directly to GCS).
 
 ```bash
-curl -O "https://<service-url>/results/005d0bf7_video_annotated.mp4"
+curl -O "https://dlc-api-service-405737646974.europe-west4.run.app/results/4edec7a8-651c-4c10-a653-6b8f9535caf4_annotated.mp4"
 ```
 
 ---
 
-## 🐍 Python Examples
+## Python Examples
 
-### Example 1: File Upload with Polling
+### File Upload with Polling
 
 ```python
 import requests
 import time
 
-SERVICE_URL = "https://<service-url>"
+SERVICE_URL = "https://dlc-api-service-405737646974.europe-west4.run.app"
 
 # 1. Upload video
 with open("input.mp4", "rb") as f:
@@ -290,10 +284,10 @@ while True:
     print(f"Status: {status['status']} | Elapsed: {status['elapsed_seconds']}s")
 
     if status["status"] == "completed":
-        print(f"✅ Done! Files: {status['result_files']}")
+        print(f"Done! Files: {status['result_files']}")
         break
     elif status["status"] == "failed":
-        print(f"❌ Failed: {status['error']}")
+        print(f"Failed: {status['error']}")
         break
 
     time.sleep(5)
@@ -306,44 +300,40 @@ for fname in status["result_files"]:
     print(f"Downloaded: {fname}")
 ```
 
-### Example 2: GCS-to-GCS Async Processing with Polling
+### GCS-to-GCS with Polling
 
 ```python
 import requests
 import time
 
-SERVICE_URL = "https://<service-url>"
+SERVICE_URL = "https://dlc-api-service-405737646974.europe-west4.run.app"
 
-# 1. Check health
-health = requests.get(f"{SERVICE_URL}/").json()
-print(f"API Status: {health['status']}")
-
-# 2. Submit GCS task (only video_name required — input/output paths use defaults)
+# 1. Submit GCS task (application/json)
 resp = requests.post(
     f"{SERVICE_URL}/infer/gcs",
-    data={
-        "video_name": "my_video.mp4",
+    json={
+        "video_uuid": "4edec7a8-651c-4c10-a653-6b8f9535caf4",
+        "gcs_input_path": "datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4",
+        "gcs_output_path": "datacam_videos/test_dlc",
     },
     timeout=30,
 )
 result = resp.json()
 task_id = result["task_id"]
-print(f"✅ Task queued: {task_id}")
+print(f"Task queued: {task_id}")
 
-# 3. Poll for completion
-for attempt in range(240):  # 20 minutes max
+# 2. Poll for completion
+while True:
     poll = requests.get(f"{SERVICE_URL}/jobs/{task_id}", timeout=30).json()
     status = poll["status"]
     elapsed = poll.get("elapsed_seconds") or 0
-
     print(f"Status: {status} | Elapsed: {elapsed:.1f}s")
 
     if status == "completed":
-        print(f"\n✅ Inference complete!")
-        print(f"Result files uploaded to GCS: {poll['result_files']}")
+        print(f"Inference complete! Results uploaded to GCS: {poll['result_files']}")
         break
     elif status == "failed":
-        print(f"\n❌ Failed: {poll['error']}")
+        print(f"Failed: {poll['error']}")
         break
 
     time.sleep(5)
@@ -351,56 +341,13 @@ for attempt in range(240):  # 20 minutes max
 
 ---
 
-## 🎬 Common Use Cases
-
-### Use Case 1: Process Video from GCS (Recommended)
-
-```bash
-# Step 1: Submit task (only video_name required)
-RESPONSE=$(curl -s -X POST "https://<service-url>/infer/gcs" \
-  -F "video_name=my_video.mp4")
-
-JOB_ID=$(echo $RESPONSE | jq -r '.task_id')
-echo "Job ID: $JOB_ID"
-
-# Step 2: Poll for completion
-while true; do
-  POLL=$(curl -s "https://<service-url>/jobs/$JOB_ID")
-  STATUS=$(echo $POLL | jq -r '.status')
-  echo "Status: $STATUS"
-
-  if [ "$STATUS" = "completed" ]; then
-    echo "✅ Done!"
-    echo $POLL | jq '.result_files'
-    break
-  elif [ "$STATUS" = "failed" ]; then
-    echo "❌ Failed"
-    echo $POLL | jq -r '.error'
-    exit 1
-  fi
-
-  sleep 5
-done
-```
-
-### Use Case 2: Direct File Upload
-
-```bash
-curl -X POST "https://<service-url>/infer" \
-  -F "video=@dog_playing.mp4" \
-  -F "model_name=hrnet_w32" \
-  -F "superanimal_name=superanimal_quadruped"
-```
-
----
-
-## ⚙️ Configuration
+## Configuration
 
 ### GCS Paths
 
-Both `gcs_input_path` and `gcs_output_path` are required per request — there are no default values.
+Both `gcs_input_path` and `gcs_output_path` are required per request.
 
-- **Input path format:** `bucket_name/folder/UUID.mp4`
+- **Input path format:** `bucket_name/folder/video_uuid.mp4`
 - **Output path format:** `bucket_name/folder`
 
 ### Available Models
@@ -421,30 +368,31 @@ Both `gcs_input_path` and `gcs_output_path` are required per request — there a
 
 Each inference run produces:
 
-- `*_annotated.mp4` — Final nicely annotated video with keypoints and bounding boxes
+- `*_annotated.mp4` — Annotated video with keypoints and bounding boxes (H.264 encoded)
 - `*.h5` — Pose predictions (HDF5 format)
 - `*_before_adapt.json` — Per-frame predictions (JSON)
-- `*_labeled_before_adapt.mp4` — Raw labeled video output directly from DeepLabCut
+- `*_labeled_before_adapt.mp4` — Raw labeled video from DeepLabCut (H.264 re-encoded)
 - `*.pickle` — Full predictions (if applicable)
 
 ---
 
-## 📦 GCS Bucket Storage
+## CLI Client
 
-For `/infer/gcs` jobs, results are automatically uploaded to GCS and local files are cleaned up.
+The `run_inference.py` script provides a CLI for both endpoints.
 
-**Default output:** `gs://dlc_bucket/dlc_output_main/`
-
-**Per-request:** Use `gcs_output_path` parameter (format: `bucket/folder`)
-
-**List outputs:**
+### File Upload Mode
 
 ```bash
-gsutil ls gs://dlc_bucket/dlc_output_main/
+python run_inference.py --video input.mp4 --output results/
+python run_inference.py --video input.mp4 --output results/ --model resnet_50
 ```
 
-**Download from GCS:**
+### GCS Mode
 
 ```bash
-gsutil cp gs://dlc_bucket/dlc_output_main/005d0bf7_video_annotated.mp4 ./
+python run_inference.py --gcs \
+  --video-uuid 4edec7a8-651c-4c10-a653-6b8f9535caf4 \
+  --gcs-input-path datacam_videos/processed_videos/4edec7a8-651c-4c10-a653-6b8f9535caf4.mp4 \
+  --gcs-output-path datacam_videos/test_dlc \
+  --api-url https://dlc-api-service-405737646974.europe-west4.run.app
 ```

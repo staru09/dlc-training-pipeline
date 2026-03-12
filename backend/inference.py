@@ -2,12 +2,51 @@ from __future__ import annotations
 
 import logging
 import shutil
+import subprocess
 from pathlib import Path
 
 from config import settings
 from schemas import InferenceParams
 
 logger = logging.getLogger(__name__)
+
+_MP4_EXTENSIONS = {".mp4", ".m4v", ".mov"}
+
+
+def _ensure_mp4(video_path: Path, _report=None) -> Path:
+    """Convert non-MP4 videos (e.g. webm/av1) to MP4 H.264 so OpenCV can read them."""
+    if video_path.suffix.lower() in _MP4_EXTENSIONS:
+        return video_path
+
+    _report = _report or (lambda *a, **kw: None)
+    mp4_path = video_path.with_suffix(".mp4")
+
+    logger.info("Converting %s → %s (original codec may not be supported by OpenCV)", video_path.name, mp4_path.name)
+    _report(0.03, f"Converting {video_path.suffix} to MP4")
+
+    ffmpeg_cmd = [
+        "ffmpeg", "-y", "-i", str(video_path),
+        "-c:v", "libx264", "-preset", "fast",
+        "-crf", "23", "-pix_fmt", "yuv420p",
+        "-an", str(mp4_path),
+    ]
+
+    try:
+        result = subprocess.run(ffmpeg_cmd, check=True, capture_output=True, text=True)
+        logger.info(
+            "Converted %s → %s (%.2f MB)",
+            video_path.name, mp4_path.name, mp4_path.stat().st_size / 1e6,
+        )
+        return mp4_path
+    except subprocess.CalledProcessError as e:
+        logger.error(
+            "ffmpeg conversion failed for %s (exit code %d)\nstderr: %s",
+            video_path.name, e.returncode, e.stderr,
+        )
+        raise RuntimeError(f"Failed to convert {video_path.name} to MP4: {e.stderr}") from e
+    except FileNotFoundError:
+        logger.error("ffmpeg binary not found in PATH")
+        raise RuntimeError("ffmpeg is not installed")
 
 
 def _discover_result_files(
@@ -56,8 +95,6 @@ def _copy_results_to_output(
     output_dir.mkdir(parents=True, exist_ok=True)
     filenames: list[str] = []
     final_paths: list[Path] = []
-
-    import subprocess
 
     for src in result_files:
         dst = output_dir / src.name
@@ -285,7 +322,10 @@ def run_gcs_inference(
         local_video = download_from_gcs(input_bucket, blob_path, tmp_dir)
         logger.info("Video downloaded to %s (%.2f MB)", local_video, local_video.stat().st_size / 1e6)
 
-        # 2. Run DLC inference (progress 0.05 → 0.95 reported inside)
+        # 2. Convert to MP4 if not already (e.g. webm/av1 that OpenCV can't decode)
+        local_video = _ensure_mp4(local_video, _report)
+
+        # 3. Run DLC inference (progress 0.05 → 0.95 reported inside)
         result = run_inference(
             video_path=local_video,
             params=params,
